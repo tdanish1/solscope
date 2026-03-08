@@ -1,18 +1,18 @@
 {
   "name": "solscope",
   "version": "2.0.0",
-  "description": "SolScope — Solana Smart Money Intelligence Feed",
+  "description": "Mobile-first Solana intelligence feed",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "node-telegram-bot-api": "^0.66.0",
-    "node-cron": "^3.0.3"
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0"
   },
   "engines": {
     "node": ">=20.0.0"
