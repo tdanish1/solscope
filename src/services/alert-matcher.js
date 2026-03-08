@@ -1,6 +1,4 @@
-// ============================================
-// ALERT MATCHER — Custom User Alerts
-// ============================================
+// Alert matching system
 // Users subscribe to internal signals, NOT raw API queries.
 // This means the expensive part (fetching data) is shared,
 // and the matching part (checking rules) is free.
@@ -10,7 +8,6 @@
 //
 // The engine checks this against already-computed snapshots.
 // Zero additional API calls per user.
-// ============================================
 
 class AlertMatcher {
   constructor(telegramBot) {

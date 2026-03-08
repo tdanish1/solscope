@@ -1,11 +1,5 @@
-// ============================================
+
 // SOLSCOPE v2 — Smart Money Intelligence Feed
-// ============================================
-// Architecture:
-//   Helius detects → Jupiter contextualizes →
-//   Nansen enriches → SolScope scores →
-//   Alerts fan out
-// ============================================
 
 import "dotenv/config";
 import express from "express";
@@ -21,22 +15,18 @@ import createRoutes from "./routes/api.js";
 
 async function main() {
   console.log("");
-  console.log("  ╔═══════════════════════════════════════╗");
-  console.log("  ║  🔬 SolScope — See Solana Clearly      ║");
-  console.log("  ║  Smart Money Intelligence Feed          ║");
-  console.log("  ╚═══════════════════════════════════════╝");
   console.log("");
   console.log("  Initializing 3-API stack...");
   console.log("");
 
-  // ── Validate minimum config ──
+  // Validate minimum config
   const heliusKey = process.env.HELIUS_API_KEY;
   if (!heliusKey || heliusKey.includes("your_")) {
     console.error("  ❌ HELIUS_API_KEY not set. Get one at https://dashboard.helius.dev");
     process.exit(1);
   }
 
-  // ── Layer 1: Blockchain infrastructure ──
+  // Layer 1: Blockchain infrastructure
   const helius = new HeliusService(heliusKey);
   const health = await helius.healthCheck();
   if (!health.healthy) {
@@ -44,13 +34,13 @@ async function main() {
     process.exit(1);
   }
 
-  // ── Layer 2: Market context ──
+  // Layer 2: Market context
   const jupiter = new JupiterService(process.env.JUPITER_API_KEY);
 
-  // ── Layer 3: Smart money intelligence ──
+  // Layer 3: Smart money intelligence
   const nansen = new NansenService(process.env.NANSEN_API_KEY);
 
-  // ── Signal engine (the core product) ──
+  // Signal engine (the core product)
   const signalEngine = new SignalEngine(helius, jupiter, nansen, {
     convictionThreshold: parseInt(process.env.CONVICTION_THRESHOLD) || 1000000,
     holdingsChangeThreshold: parseInt(process.env.HOLDINGS_CHANGE_THRESHOLD) || 15,
@@ -59,16 +49,16 @@ async function main() {
   // Initialize token universe
   await signalEngine.initializeUniverse();
 
-  // ── Telegram bot ──
+  // Telegram bot
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   const botServices = { signalEngine, alertMatcher: null, nansen, helius, jupiter };
   const bot = new SolScopeBot(telegramToken, botServices);
 
-  // ── Alert matcher ──
+  // Alert matcher
   const alertMatcher = new AlertMatcher(bot);
   botServices.alertMatcher = alertMatcher;
 
-  // ── Express server ──
+  // Express server
   const app = express();
   app.use(cors());
   app.use(express.json());
@@ -93,7 +83,7 @@ async function main() {
     });
   });
 
-  // ── Start scan loop ──
+  // Start scan loop
   const scanInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 5) * 60 * 1000;
 
   // Initial scan
@@ -128,14 +118,14 @@ async function main() {
     signalEngine.generateDailyBrief();
   }, 60 * 60 * 1000);
 
-  // ── Launch ──
+  // Launch
   const PORT = process.env.PORT || 3001;
   app.listen(PORT, () => {
     console.log("");
-    console.log("  ═══════════════════════════════════════");
+  
     console.log(`  🚀 SolScope running on port ${PORT}`);
     console.log(`     http://localhost:${PORT}`);
-    console.log("  ═══════════════════════════════════════");
+  
     console.log("");
     console.log("  Endpoints:");
     console.log(`    Feed:    http://localhost:${PORT}/api/feed`);

@@ -1,9 +1,6 @@
-// ============================================
 // TELEGRAM BOT — Intelligence Feed Companion
-// ============================================
 // Commands focused on signals, not trading.
 // This is a distribution channel, not the product.
-// ============================================
 
 import TelegramBot from "node-telegram-bot-api";
 

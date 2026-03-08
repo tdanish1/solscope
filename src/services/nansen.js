@@ -1,23 +1,8 @@
-// ============================================
-// NANSEN SERVICE — Smart Money Intelligence
-// ============================================
-// Role: The "brain" of SolScope. Fetches smart money
+// Nansen API service
 // behavior and transforms it into derived signals.
 //
-// CRITICAL RULES:
-//   1. Never expose Nansen's proprietary wallet labels
-//   2. Only show DERIVED insights (scores, trends, %)
-//   3. Cache aggressively (5-30 min per token)
-//   4. Only call when token is "promoted" (interesting)
 //
-// Endpoints used (5 credits each):
-//   - smart-money/inflows/netflow
-//   - smart-money/holdings
-//   - Token holder distribution (if available)
 //
-// Budget: 10M credits ÷ 5 per call = 2M calls
-// At 300 calls/day = ~18 years of runway
-// ============================================
 
 class NansenService {
   constructor(apiKey) {
@@ -80,7 +65,7 @@ class NansenService {
     }
   }
 
-  // ── Smart Money Net Flow ──
+  // Smart Money Net Flow
   // Returns: net inflow/outflow $ for a token
   async getSmartMoneyNetflow(tokenAddress, timeframe = "24h") {
     const ck = `netflow:${tokenAddress}:${timeframe}`;
@@ -97,7 +82,7 @@ class NansenService {
     return data;
   }
 
-  // ── Smart Money Holdings ──
+  // Smart Money Holdings
   // Returns: how much smart money holds of a token
   async getSmartMoneyHoldings(tokenAddress) {
     const ck = `holdings:${tokenAddress}`;
@@ -113,7 +98,7 @@ class NansenService {
     return data;
   }
 
-  // ── Token Holder Distribution ──
+  // Token Holder Distribution
   // Returns: % smart money vs retail vs exchange
   async getHolderDistribution(tokenAddress) {
     const ck = `holders:${tokenAddress}`;

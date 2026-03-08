@@ -1,6 +1,4 @@
-// ============================================
-// SIGNAL ENGINE — The Core Product
-// ============================================
+// Signal processing engine
 // "Helius detects, Jupiter contextualizes,
 //  Nansen enriches, SolScope scores,
 //  then alerts fan out."
@@ -12,7 +10,6 @@
 //   3. New Smart Money Entry
 //   4. Smart Money Exit
 //   5. Liquidity Risk
-// ============================================
 
 const SIGNAL_TYPES = {
   CONVICTION_UP: "CONVICTION_UP",
