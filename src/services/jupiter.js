@@ -24,29 +24,10 @@ const KNOWN_TOKENS = {
   BOME: "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82",
 };
 
-// CoinGecko IDs for price lookups (Jupiter price API requires paid key)
-const COINGECKO_IDS = {
-  SOL: "solana",
-  JUP: "jupiter-exchange-solana",
-  BONK: "bonk",
-  WIF: "dogwifcoin",
-  JTO: "jito-governance",
-  PYTH: "pyth-network",
-  RAY: "raydium",
-  ORCA: "orca",
-  RENDER: "render-token",
-  HNT: "helium",
-  DRIFT: "drift-protocol",
-  POPCAT: "popcat",
-  MOBILE: "helium-mobile",
-  SAMO: "samoyedcoin",
-  BOME: "book-of-meme",
-};
 
 class JupiterService {
   constructor(apiKey) {
-    // Current correct base URL per Jupiter developer docs
-    this.baseUrl = "https://api.jup.ag";
+    this.baseUrl = "https://lite-api.jup.ag";
     this.apiKey = apiKey || null;
     this.cache = new Map();
     this.callCount = 0;
@@ -73,45 +54,30 @@ class JupiterService {
     return h;
   }
 
-  // Get prices for multiple tokens via CoinGecko (free, no key required)
+  // Get prices for multiple tokens via Jupiter Price V3 (free, no key required)
   async getPrices(mintAddresses) {
     const ck = `prices:${mintAddresses.join(",")}`;
     const cached = this._cached(ck, 30000); // 30s cache
     if (cached) return cached;
 
-    // Map mints to CoinGecko IDs
-    const mintToSymbol = {};
-    for (const [sym, mint] of Object.entries(KNOWN_TOKENS)) {
-      mintToSymbol[mint] = sym;
-    }
-
-    const cgIds = mintAddresses
-      .map(mint => COINGECKO_IDS[mintToSymbol[mint]])
-      .filter(Boolean);
-
-    if (cgIds.length === 0) return {};
-
     this.callCount++;
     try {
       const res = await fetch(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${cgIds.join(",")}&vs_currencies=usd`,
-        { headers: { "Content-Type": "application/json" } }
+        `${this.baseUrl}/price/v3?ids=${mintAddresses.join(",")}`,
+        { headers: this._headers() }
       );
       const data = await res.json();
 
-      // Transform CoinGecko response back to { [mint]: { price: "..." } } format
+      // Normalize to { [mint]: { price: "..." } } format
       const result = {};
-      for (const [sym, mint] of Object.entries(KNOWN_TOKENS)) {
-        const cgId = COINGECKO_IDS[sym];
-        if (cgId && data[cgId]) {
-          result[mint] = { price: String(data[cgId].usd) };
-        }
+      for (const [mint, info] of Object.entries(data)) {
+        result[mint] = { price: String(info.usdPrice) };
       }
 
       this._cache(ck, result);
       return result;
     } catch (e) {
-      console.error("CoinGecko price fetch failed:", e.message);
+      console.error("Jupiter price fetch failed:", e.message);
       return {};
     }
   }
@@ -124,7 +90,7 @@ class JupiterService {
 
     this.callCount++;
     try {
-      const res = await fetch(`${this.baseUrl}/tokens/v1`, {
+      const res = await fetch(`${this.baseUrl}/tokens/v2/tag?query=verified`, {
         headers: this._headers(),
       });
       const tokens = await res.json();
@@ -145,7 +111,7 @@ class JupiterService {
 
     this.callCount++;
     try {
-      const res = await fetch(`${this.baseUrl}/tokens/v1/${mintAddress}`, {
+      const res = await fetch(`${this.baseUrl}/tokens/v2/search?query=${mintAddress}`, {
         headers: this._headers(),
       });
       if (!res.ok) return null;
