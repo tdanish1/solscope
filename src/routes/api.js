@@ -52,6 +52,9 @@ export default function createRoutes(services) {
   router.get("/debug/nansen/:symbol", async (req, res) => {
     const mint = jupiter.resolveMint(req.params.symbol);
     if (!mint) return res.status(404).json({ error: "Unknown symbol" });
+    // Bust cache so we always get a fresh response
+    nansen.cache.delete(`netflow:${mint}`);
+    nansen.cache.delete(`holdings:${mint}`);
     const [netflow, holdings] = await Promise.all([
       nansen.getSmartMoneyNetflow(mint),
       nansen.getSmartMoneyHoldings(mint),

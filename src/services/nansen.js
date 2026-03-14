@@ -67,8 +67,9 @@ class NansenService {
     if (cached) return cached;
 
     const data = await this._fetch("/smart-money/netflow", {
-      chains: ["solana"],
-      filters: { token_address: tokenAddress },
+      chain: "solana",
+      token_address: tokenAddress,
+      time_range: "24h",
     });
 
     if (data) this._cache(ck, data);
@@ -82,8 +83,8 @@ class NansenService {
     if (cached) return cached;
 
     const data = await this._fetch("/smart-money/holdings", {
-      chains: ["solana"],
-      filters: { token_address: tokenAddress },
+      chain: "solana",
+      token_address: tokenAddress,
     });
 
     if (data) this._cache(ck, data);
