@@ -51,16 +51,17 @@ export default function createRoutes(services) {
   // Temporary debug endpoint — test raw Nansen API response
   router.get("/debug/nansen", async (req, res) => {
     if (!nansen.enabled) return res.json({ error: "Nansen not configured" });
-    const url = new URL("https://api.nansen.ai/v1/smart-money/inflows/netflow");
-    url.searchParams.set("chain", "solana");
-    url.searchParams.set("token_address", "So11111111111111111111111111111111111111112"); // SOL
-    url.searchParams.set("timeframe", "24h");
     try {
-      const r = await fetch(url.toString(), {
-        headers: { "Authorization": `Bearer ${nansen.apiKey}`, "Content-Type": "application/json" },
+      const r = await fetch("https://api.nansen.ai/api/v1/smart-money/netflow", {
+        method: "POST",
+        headers: { "apiKey": nansen.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chains: ["solana"],
+          filters: { token_address: "So11111111111111111111111111111111111111112" },
+        }),
       });
       const body = await r.text();
-      res.json({ status: r.status, url: url.toString().replace(nansen.apiKey, "***"), body: body.slice(0, 1000) });
+      res.json({ status: r.status, body: body.slice(0, 1000) });
     } catch (e) {
       res.json({ error: e.message });
     }
