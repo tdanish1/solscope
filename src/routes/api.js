@@ -48,25 +48,6 @@ export default function createRoutes(services) {
     res.json(result);
   });
 
-  // Temporary debug endpoint — test raw Nansen API response
-  router.get("/debug/nansen", async (req, res) => {
-    if (!nansen.enabled) return res.json({ error: "Nansen not configured" });
-    try {
-      const r = await fetch("https://api.nansen.ai/api/v1/smart-money/netflow", {
-        method: "POST",
-        headers: { "apiKey": nansen.apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chains: ["solana"],
-          filters: { token_address: "So11111111111111111111111111111111111111112" },
-        }),
-      });
-      const body = await r.text();
-      res.json({ status: r.status, body: body.slice(0, 1000) });
-    } catch (e) {
-      res.json({ error: e.message });
-    }
-  });
-
   // Health & stats
   router.get("/health", async (req, res) => {
     const h = await helius.healthCheck();
