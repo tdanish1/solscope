@@ -1,13 +1,9 @@
 // Nansen API service
-// behavior and transforms it into derived signals.
-//
-//
-//
 
 class NansenService {
   constructor(apiKey) {
     this.apiKey = apiKey;
-    this.baseUrl = "https://api.nansen.ai";
+    this.baseUrl = "https://api.nansen.ai/api/v1";
     this.cache = new Map();
     this.callCount = 0;
     this.creditUsed = 0;
@@ -35,26 +31,25 @@ class NansenService {
     }
   }
 
-  async _fetch(endpoint, params = {}) {
+  async _fetch(endpoint, body = {}) {
     if (!this.enabled) return null;
 
     this.callCount++;
-    this.creditUsed += 5; // each call costs 5 credits
-
-    const url = new URL(`${this.baseUrl}${endpoint}`);
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    this.creditUsed += 5;
 
     try {
-      const res = await fetch(url.toString(), {
+      const res = await fetch(`${this.baseUrl}${endpoint}`, {
+        method: "POST",
         headers: {
-          "Authorization": `Bearer ${this.apiKey}`,
+          "apiKey": this.apiKey,
           "Content-Type": "application/json",
         },
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
         const errText = await res.text();
-        console.error(`Nansen API ${res.status}: ${errText}`);
+        console.error(`Nansen API ${res.status} on ${endpoint}: ${errText}`);
         return null;
       }
 
@@ -66,16 +61,14 @@ class NansenService {
   }
 
   // Smart Money Net Flow
-  // Returns: net inflow/outflow $ for a token
-  async getSmartMoneyNetflow(tokenAddress, timeframe = "24h") {
-    const ck = `netflow:${tokenAddress}:${timeframe}`;
-    const cached = this._cached(ck, 10 * 60 * 1000); // 10 min cache
+  async getSmartMoneyNetflow(tokenAddress) {
+    const ck = `netflow:${tokenAddress}`;
+    const cached = this._cached(ck, 10 * 60 * 1000);
     if (cached) return cached;
 
-    const data = await this._fetch("/v1/smart-money/inflows/netflow", {
-      chain: "solana",
-      token_address: tokenAddress,
-      timeframe,
+    const data = await this._fetch("/smart-money/netflow", {
+      chains: ["solana"],
+      filters: { token_address: tokenAddress },
     });
 
     if (data) this._cache(ck, data);
@@ -83,31 +76,31 @@ class NansenService {
   }
 
   // Smart Money Holdings
-  // Returns: how much smart money holds of a token
   async getSmartMoneyHoldings(tokenAddress) {
     const ck = `holdings:${tokenAddress}`;
-    const cached = this._cached(ck, 15 * 60 * 1000); // 15 min cache
+    const cached = this._cached(ck, 15 * 60 * 1000);
     if (cached) return cached;
 
-    const data = await this._fetch("/v1/smart-money/holdings", {
-      chain: "solana",
-      token_address: tokenAddress,
+    const data = await this._fetch("/smart-money/holdings", {
+      chains: ["solana"],
+      filters: { token_address: tokenAddress },
     });
 
     if (data) this._cache(ck, data);
     return data;
   }
 
-  // Token Holder Distribution
-  // Returns: % smart money vs retail vs exchange
+  // Token Holder Distribution (smart money holders via TGM)
   async getHolderDistribution(tokenAddress) {
     const ck = `holders:${tokenAddress}`;
-    const cached = this._cached(ck, 30 * 60 * 1000); // 30 min cache
+    const cached = this._cached(ck, 30 * 60 * 1000);
     if (cached) return cached;
 
-    const data = await this._fetch("/v1/tgm/holders", {
+    const data = await this._fetch("/tgm/holders", {
       chain: "solana",
       token_address: tokenAddress,
+      label_type: "smart_money",
+      pagination: { per_page: 100 },
     });
 
     if (data) this._cache(ck, data);
@@ -118,14 +111,12 @@ class NansenService {
   // DERIVED INTELLIGENCE (safe to display)
   // ════════════════════════════════════════
 
-  // Compute Smart Money Sentiment Score (0-100)
-  // This is SolScope's proprietary metric — safe to show
-  computeSentimentScore(netflowData, holdingsData, holderData) {
-    let score = 50; // neutral baseline
+  computeSentimentScore(netflowEntry, holdingsEntry) {
+    let score = 50;
 
     // Factor 1: Net flow direction & magnitude (40% weight)
-    if (netflowData) {
-      const netflow = netflowData.net_flow_usd || netflowData.netflow || 0;
+    if (netflowEntry) {
+      const netflow = netflowEntry.net_flow_24h_usd || 0;
       if (netflow > 5000000) score += 20;
       else if (netflow > 1000000) score += 14;
       else if (netflow > 500000) score += 8;
@@ -137,8 +128,8 @@ class NansenService {
     }
 
     // Factor 2: Holdings change trend (30% weight)
-    if (holdingsData) {
-      const change = holdingsData.holdings_change_pct || holdingsData.change_pct || 0;
+    if (holdingsEntry) {
+      const change = holdingsEntry.balance_24h_percent_change || 0;
       if (change > 30) score += 15;
       else if (change > 15) score += 10;
       else if (change > 5) score += 5;
@@ -148,21 +139,18 @@ class NansenService {
       else score -= 15;
     }
 
-    // Factor 3: Holder quality (20% weight)
-    if (holderData) {
-      const smartMoneyPct = holderData.smart_money_pct || holderData.smart_money_percentage || 0;
+    // Factor 3: Smart money share of holdings (20% weight)
+    if (holdingsEntry) {
+      const smartMoneyPct = holdingsEntry.share_of_holdings_percent || 0;
       if (smartMoneyPct > 25) score += 10;
       else if (smartMoneyPct > 15) score += 6;
       else if (smartMoneyPct > 5) score += 2;
       else score -= 4;
     }
 
-    // Factor 4: Liquidity stability (10% weight) — reserved for later
-
     return Math.max(0, Math.min(100, Math.round(score)));
   }
 
-  // Determine trend label from score
   getTrend(score, previousScore) {
     if (previousScore !== null && previousScore !== undefined) {
       const delta = score - previousScore;
@@ -179,11 +167,10 @@ class NansenService {
     return "NEUTRAL";
   }
 
-  // Get confidence level
-  getConfidence(netflowData, holdingsData) {
+  getConfidence(netflowEntry, holdingsEntry) {
     let dataPoints = 0;
-    if (netflowData) dataPoints++;
-    if (holdingsData) dataPoints++;
+    if (netflowEntry) dataPoints++;
+    if (holdingsEntry) dataPoints++;
     if (dataPoints === 0) return "LOW";
     if (dataPoints === 1) return "MEDIUM";
     return "HIGH";
@@ -193,48 +180,52 @@ class NansenService {
   // FULL TOKEN INTELLIGENCE (one call per token)
   // ════════════════════════════════════════
 
-  // This is the main method the signal engine calls
-  // Returns a complete intelligence snapshot for one token
   async getTokenIntelligence(tokenAddress) {
     if (!this.enabled) {
       return this._mockIntelligence(tokenAddress);
     }
 
-    // Fetch all three data points in parallel
     const [netflow, holdings, holders] = await Promise.all([
       this.getSmartMoneyNetflow(tokenAddress),
       this.getSmartMoneyHoldings(tokenAddress),
       this.getHolderDistribution(tokenAddress),
     ]);
 
-    // Compute derived metrics
-    const sentimentScore = this.computeSentimentScore(netflow, holdings, holders);
-    const trend = this.getTrend(sentimentScore);
-    const confidence = this.getConfidence(netflow, holdings);
+    // Extract the first matching entry for this token
+    const netflowEntry = netflow?.data?.find(
+      d => d.token_address?.toLowerCase() === tokenAddress.toLowerCase()
+    ) || netflow?.data?.[0] || null;
 
-    // Extract safe-to-display numbers
-    const netflowUsd = netflow?.net_flow_usd || netflow?.netflow || 0;
-    const holdingsChangePct = holdings?.holdings_change_pct || holdings?.change_pct || 0;
-    const smartMoneyPct = holders?.smart_money_pct || holders?.smart_money_percentage || 0;
-    const retailPct = holders?.retail_pct || holders?.retail_percentage || 0;
-    const exchangePct = holders?.exchange_pct || holders?.exchange_percentage || 0;
-    const smartMoneyCount = holdings?.num_smart_money_holders || holdings?.count || 0;
+    const holdingsEntry = holdings?.data?.find(
+      d => d.token_address?.toLowerCase() === tokenAddress.toLowerCase()
+    ) || holdings?.data?.[0] || null;
+
+    const sentimentScore = this.computeSentimentScore(netflowEntry, holdingsEntry);
+    const trend = this.getTrend(sentimentScore);
+    const confidence = this.getConfidence(netflowEntry, holdingsEntry);
+
+    const netflowUsd = netflowEntry?.net_flow_24h_usd || 0;
+    const holdingsChangePct = holdingsEntry?.balance_24h_percent_change || 0;
+    const smartMoneyPct = holdingsEntry?.share_of_holdings_percent || 0;
+    const smartMoneyCount = holdingsEntry?.holders_count || 0;
+
+    // Holder distribution: smart money from holdings, retail as remainder
+    const holdersList = holders?.data || [];
+    const exchangePct = holdersList.reduce((sum, h) => sum + (h.ownership_percentage || 0), 0);
+    const retailPct = Math.max(0, 100 - smartMoneyPct - exchangePct);
 
     return {
       tokenAddress,
       timestamp: Date.now(),
-      // Derived scores (safe to display)
       sentimentScore,
       trend,
       confidence,
-      // Aggregated numbers (safe — no wallet labels)
       netflowUsd,
       holdingsChangePct,
       smartMoneyPct,
       retailPct,
       exchangePct,
       smartMoneyCount,
-      // Raw flags for signal engine
       _isAccumulating: sentimentScore >= 60 && holdingsChangePct > 5,
       _isDistributing: sentimentScore <= 40 && holdingsChangePct < -5,
       _hasNewEntry: smartMoneyCount > 0 && holdingsChangePct > 20,
@@ -243,7 +234,6 @@ class NansenService {
     };
   }
 
-  // Mock data when Nansen isn't configured
   _mockIntelligence(tokenAddress) {
     const hash = tokenAddress.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
     const score = 30 + (hash % 50);
