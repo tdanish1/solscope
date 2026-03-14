@@ -83,8 +83,25 @@ async function main() {
     });
   });
 
+  // Set up Helius webhook for real-time token activity (one-time, costs 1 Helius credit)
+  const webhookUrl = process.env.WEBHOOK_BASE_URL
+    ? `${process.env.WEBHOOK_BASE_URL}/api/webhooks/helius`
+    : null;
+
+  if (webhookUrl) {
+    try {
+      const tokenMints = [...signalEngine.trackedTokens.keys()];
+      await helius.createWebhook(webhookUrl, tokenMints, ["SWAP"]);
+      console.log("  ✓ Helius webhook registered for real-time swap events");
+    } catch (e) {
+      console.warn("  ⚠ Helius webhook setup failed:", e.message);
+    }
+  } else {
+    console.log("  ⚠ WEBHOOK_BASE_URL not set — real-time webhook disabled");
+  }
+
   // Start scan loop
-  const scanInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 5) * 60 * 1000;
+  const scanInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 15) * 60 * 1000;
 
   // Initial scan
   console.log("");

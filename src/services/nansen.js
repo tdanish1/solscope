@@ -180,7 +180,9 @@ class NansenService {
   // FULL TOKEN INTELLIGENCE (one call per token)
   // ════════════════════════════════════════
 
-  async getTokenIntelligence(tokenAddress) {
+  // includeHolders should only be true for on-demand token detail page loads
+  // — skipping it in the regular scan saves 1/3 of Nansen credits
+  async getTokenIntelligence(tokenAddress, includeHolders = false) {
     if (!this.enabled) {
       return this._mockIntelligence(tokenAddress);
     }
@@ -188,7 +190,7 @@ class NansenService {
     const [netflow, holdings, holders] = await Promise.all([
       this.getSmartMoneyNetflow(tokenAddress),
       this.getSmartMoneyHoldings(tokenAddress),
-      this.getHolderDistribution(tokenAddress),
+      includeHolders ? this.getHolderDistribution(tokenAddress) : Promise.resolve(null),
     ]);
 
     // Extract the first matching entry for this token

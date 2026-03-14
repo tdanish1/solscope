@@ -56,7 +56,7 @@ class SignalEngine {
     this.scanCount = 0;
 
     // Tracked token universe (hot/warm/cold tiers)
-    this.trackedTokens = new Map(); // mint → { symbol, tier, lastScan }
+    this.trackedTokens = new Map(); // mint → { symbol, tier, lastScan, hotScansRemaining }
 
     console.log("  ✓ Signal engine initialized");
   }
@@ -79,9 +79,13 @@ class SignalEngine {
   }
 
   // Promote a token to hot tier (scan more frequently)
+  // Auto-demotes back to warm after 2 hot scans to protect Nansen credits
   promoteToken(mint) {
     const t = this.trackedTokens.get(mint);
-    if (t) t.tier = "hot";
+    if (t) {
+      t.tier = "hot";
+      t.hotScansRemaining = 2;
+    }
   }
 
   // ════════════════════════════════════════
@@ -91,8 +95,8 @@ class SignalEngine {
   async scan() {
     this.scanCount++;
     const now = Date.now();
-    const hotInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 5) * 60 * 1000;
-    const warmInterval = (parseInt(process.env.WARM_REFRESH_MINUTES) || 30) * 60 * 1000;
+    const hotInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 15) * 60 * 1000;
+    const warmInterval = (parseInt(process.env.WARM_REFRESH_MINUTES) || 60) * 60 * 1000;
 
     let scanned = 0;
     let signalsGenerated = 0;
@@ -108,8 +112,8 @@ class SignalEngine {
         const price = priceData ? parseFloat(priceData.price) : token.price;
         token.price = price;
 
-        // Step 2: Get smart money intelligence from Nansen
-        const intel = await this.nansen.getTokenIntelligence(mint);
+        // Step 2: Get smart money intelligence from Nansen (no holders in scan — saves credits)
+        const intel = await this.nansen.getTokenIntelligence(mint, false);
 
         // Step 3: Store previous score for delta detection
         const prevScore = this.previousScores.get(mint) || null;
@@ -138,6 +142,12 @@ class SignalEngine {
 
         token.lastScan = now;
         scanned++;
+
+        // Auto-demote hot tokens back to warm after hotScansRemaining hits 0
+        if (token.tier === "hot") {
+          token.hotScansRemaining = (token.hotScansRemaining || 1) - 1;
+          if (token.hotScansRemaining <= 0) token.tier = "warm";
+        }
       } catch (e) {
         console.error(`Scan failed for ${token.symbol}: ${e.message}`);
       }
@@ -268,8 +278,8 @@ class SignalEngine {
     return this.signals.slice(0, limit);
   }
 
-  // Get token intelligence page
-  getTokenPage(mintOrSymbol) {
+  // Get token intelligence page (fetches holders on-demand for the detail view)
+  async getTokenPage(mintOrSymbol) {
     // Try direct mint lookup
     let snapshot = this.tokenSnapshots.get(mintOrSymbol);
 
@@ -281,7 +291,13 @@ class SignalEngine {
 
     if (!snapshot) return null;
 
-    // Return safe-to-display data only
+    // Fetch holder distribution on-demand (not in regular scan to save Nansen credits)
+    const holders = await this.nansen.getHolderDistribution(snapshot.mint);
+    const holdersList = holders?.data || [];
+    const exchangePct = holdersList.reduce((sum, h) => sum + (h.ownership_percentage || 0), 0);
+    const smartMoneyPct = snapshot.smartMoneyPct || 0;
+    const retailPct = Math.max(0, 100 - smartMoneyPct - exchangePct);
+
     return {
       symbol: snapshot.symbol,
       mint: snapshot.mint,
@@ -292,13 +308,12 @@ class SignalEngine {
       netflowUsd: snapshot.netflowUsd,
       holdingsChangePct: snapshot.holdingsChangePct,
       holderDistribution: {
-        smartMoney: snapshot.smartMoneyPct,
-        retail: snapshot.retailPct,
-        exchange: snapshot.exchangePct,
+        smartMoney: smartMoneyPct,
+        retail: retailPct,
+        exchange: exchangePct,
       },
       smartMoneyCount: snapshot.smartMoneyCount,
       updatedAt: snapshot.updatedAt,
-      // Recent signals for this token
       recentSignals: this.signals
         .filter(s => s.mint === snapshot.mint)
         .slice(0, 5),

@@ -14,8 +14,8 @@ export default function createRoutes(services) {
   });
 
   // Token intelligence page
-  router.get("/token/:id", (req, res) => {
-    const page = signalEngine.getTokenPage(req.params.id);
+  router.get("/token/:id", async (req, res) => {
+    const page = await signalEngine.getTokenPage(req.params.id);
     if (!page) return res.status(404).json({ error: "Token not found or not yet scanned" });
     res.json(page);
   });
