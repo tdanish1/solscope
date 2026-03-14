@@ -48,18 +48,37 @@ export default function createRoutes(services) {
     res.json(result);
   });
 
-  // Debug: see raw Nansen response for a token (remove before store submission)
+  // Debug: inspect Nansen responses — with and without token filter
   router.get("/debug/nansen/:symbol", async (req, res) => {
     const mint = jupiter.resolveMint(req.params.symbol);
     if (!mint) return res.status(404).json({ error: "Unknown symbol" });
-    // Bust cache so we always get a fresh response
+
     nansen.cache.delete(`netflow:${mint}`);
     nansen.cache.delete(`holdings:${mint}`);
-    const [netflow, holdings] = await Promise.all([
+
+    // Test 1: current format (with token filter)
+    const [netflowFiltered, holdingsFiltered] = await Promise.all([
       nansen.getSmartMoneyNetflow(mint),
       nansen.getSmartMoneyHoldings(mint),
     ]);
-    res.json({ mint, netflow, holdings });
+
+    // Test 2: no token filter — see if any Solana data comes back at all
+    const netflowNoFilter = await nansen._fetch("/smart-money/netflow", {
+      chains: ["solana"],
+    });
+
+    // Test 3: try alternate endpoint names Nansen may use
+    const altEndpoint = await nansen._fetch("/token/smart-money", {
+      chains: ["solana"],
+      filters: { token_address: mint },
+    });
+
+    res.json({
+      mint,
+      test1_withFilter: { netflow: netflowFiltered, holdings: holdingsFiltered },
+      test2_noFilter: netflowNoFilter,
+      test3_altEndpoint: altEndpoint,
+    });
   });
 
   // Health & stats
