@@ -27,7 +27,7 @@ const KNOWN_TOKENS = {
 // CoinGecko IDs for price lookups (Jupiter price API requires paid key)
 const COINGECKO_IDS = {
   SOL: "solana",
-  JUP: "jupiter",
+  JUP: "jupiter-exchange-solana",
   BONK: "bonk",
   WIF: "dogwifcoin",
   JTO: "jito-governance",
