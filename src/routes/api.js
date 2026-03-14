@@ -48,6 +48,17 @@ export default function createRoutes(services) {
     res.json(result);
   });
 
+  // Debug: see raw Nansen response for a token (remove before store submission)
+  router.get("/debug/nansen/:symbol", async (req, res) => {
+    const mint = jupiter.resolveMint(req.params.symbol);
+    if (!mint) return res.status(404).json({ error: "Unknown symbol" });
+    const [netflow, holdings] = await Promise.all([
+      nansen.getSmartMoneyNetflow(mint),
+      nansen.getSmartMoneyHoldings(mint),
+    ]);
+    res.json({ mint, netflow, holdings });
+  });
+
   // Health & stats
   router.get("/health", async (req, res) => {
     const h = await helius.healthCheck();
