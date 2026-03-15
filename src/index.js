@@ -21,9 +21,8 @@ async function main() {
   app.use(express.json());
 
   app.get("/", (req, res) => res.json({ name: "SolScope API", status: "starting" }));
-  app.get("/api/health", (req, res) => res.json({ healthy: true, status: "initializing" }));
 
-  const server = app.listen(PORT, () => {
+  app.listen(PORT, () => {
     console.log(`  🚀 SolScope on port ${PORT} — initializing services...`);
   });
 
