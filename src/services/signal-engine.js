@@ -298,13 +298,6 @@ class SignalEngine {
 
     if (!snapshot) return null;
 
-    // Fetch holder distribution on-demand (not in regular scan to save Nansen credits)
-    const holders = await this.nansen.getHolderDistribution(snapshot.mint);
-    const holdersList = holders?.data || [];
-    const smartMoneyPct = holdersList.reduce((sum, h) => sum + (h.ownership_percentage || 0), 0);
-    const exchangePct = 0;
-    const retailPct = Math.max(0, 100 - smartMoneyPct - exchangePct);
-
     return {
       symbol: snapshot.symbol,
       mint: snapshot.mint,
@@ -313,13 +306,11 @@ class SignalEngine {
       trend: snapshot.trend,
       confidence: snapshot.confidence,
       netflowUsd: snapshot.netflowUsd,
+      netflow1h: snapshot.netflow1h,
+      netflow7d: snapshot.netflow7d,
       holdingsChangePct: snapshot.holdingsChangePct,
-      holderDistribution: {
-        smartMoney: smartMoneyPct,
-        retail: retailPct,
-        exchange: exchangePct,
-      },
       smartMoneyCount: snapshot.smartMoneyCount,
+      marketCap: snapshot.marketCap,
       updatedAt: snapshot.updatedAt,
       recentSignals: this.signals
         .filter(s => s.mint === snapshot.mint)
