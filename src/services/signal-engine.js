@@ -301,8 +301,8 @@ class SignalEngine {
     // Fetch holder distribution on-demand (not in regular scan to save Nansen credits)
     const holders = await this.nansen.getHolderDistribution(snapshot.mint);
     const holdersList = holders?.data || [];
-    const exchangePct = holdersList.reduce((sum, h) => sum + (h.ownership_percentage || 0), 0);
-    const smartMoneyPct = snapshot.smartMoneyPct || 0;
+    const smartMoneyPct = holdersList.reduce((sum, h) => sum + (h.ownership_percentage || 0), 0);
+    const exchangePct = 0;
     const retailPct = Math.max(0, 100 - smartMoneyPct - exchangePct);
 
     return {
