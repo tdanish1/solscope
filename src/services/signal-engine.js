@@ -177,7 +177,14 @@ class SignalEngine {
         const entry = await this.nansen.getTokenNetflow(token.mint);
         if (!entry) continue;
 
+        // Fill fields the holders endpoint doesn't provide
+        entry.token_symbol = entry.token_symbol || token.symbol;
         const price = parseFloat(prices[token.mint]?.price) || 0;
+        const jupData = prices[token.mint];
+        if (!entry.market_cap_usd && jupData?.extraInfo?.quotedPrice?.buyPrice) {
+          entry.market_cap_usd = 0; // Jupiter doesn't reliably give mcap, leave for DexScreener
+        }
+
         const intel = this.nansen.computeIntelligenceFromNetflow(entry);
 
         const prevScore = this.previousScores.get(token.mint) || null;
