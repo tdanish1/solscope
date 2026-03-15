@@ -44,9 +44,9 @@ class SignalEngine {
     this.jupiter = jupiter;
     this.nansen = nansen;
 
-    // Thresholds (configurable via .env)
-    this.convictionThreshold = config.convictionThreshold || 1000000; // $1M
-    this.holdingsChangeThreshold = config.holdingsChangeThreshold || 15; // 15%
+    // Thresholds — calibrated for Nansen Solana smart money flows (thousands, not millions)
+    this.convictionThreshold = config.convictionThreshold || 1000; // $1K net flow
+    this.holdingsChangeThreshold = config.holdingsChangeThreshold || 5; // flow velocity score
 
     // State
     this.tokenSnapshots = new Map();  // mint → latest intelligence snapshot
@@ -98,6 +98,15 @@ class SignalEngine {
     const hotInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 15) * 60 * 1000;
     const warmInterval = (parseInt(process.env.WARM_REFRESH_MINUTES) || 60) * 60 * 1000;
 
+    // Fetch bulk Nansen netflow once per scan (saves credits vs per-token calls)
+    const nansenData = await this.nansen.getAllSolanaNetflow(100);
+    const nansenByMint = new Map();
+    if (nansenData?.data) {
+      for (const entry of nansenData.data) {
+        nansenByMint.set(entry.token_address, entry);
+      }
+    }
+
     let scanned = 0;
     let signalsGenerated = 0;
 
@@ -112,8 +121,14 @@ class SignalEngine {
         const price = priceData ? parseFloat(priceData.price) : token.price;
         token.price = price;
 
-        // Step 2: Get smart money intelligence from Nansen (no holders in scan — saves credits)
-        const intel = await this.nansen.getTokenIntelligence(mint, false);
+        // Step 2: Get smart money intelligence from Nansen bulk data
+        const nansenEntry = nansenByMint.get(mint);
+        if (!nansenEntry) {
+          token.lastScan = now;
+          scanned++;
+          continue;
+        }
+        const intel = this.nansen.computeIntelligenceFromNetflow(nansenEntry);
 
         // Step 3: Store previous score for delta detection
         const prevScore = this.previousScores.get(mint) || null;
