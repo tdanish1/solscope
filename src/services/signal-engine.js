@@ -11,6 +11,20 @@
 //   4. Smart Money Exit
 //   5. Liquidity Risk
 
+// Core Solana tokens that should always have intelligence data
+const CORE_TOKENS = [
+  { symbol: 'SOL', mint: 'So11111111111111111111111111111111111111112' },
+  { symbol: 'JUP', mint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN' },
+  { symbol: 'BONK', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
+  { symbol: 'WIF', mint: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm' },
+  { symbol: 'PYTH', mint: 'HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3' },
+  { symbol: 'RAY', mint: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R' },
+  { symbol: 'JTO', mint: 'jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL' },
+  { symbol: 'DRIFT', mint: 'DriFtupJYLTosbwoN8koMbEYSx54aFAVLddWsbksjwg7' },
+  { symbol: 'ORCA', mint: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE' },
+  { symbol: 'RENDER', mint: 'rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof' },
+];
+
 const SIGNAL_TYPES = {
   CONVICTION_UP: "CONVICTION_UP",
   CONVICTION_DOWN: "CONVICTION_DOWN",
@@ -105,8 +119,9 @@ class SignalEngine {
 
     const entries = nansenData.data;
 
-    // Fetch all prices in one Jupiter call
-    const mints = entries.map(e => e.token_address);
+    // Fetch all prices in one Jupiter call (include core tokens)
+    const coreMints = CORE_TOKENS.map(t => t.mint);
+    const mints = [...new Set([...entries.map(e => e.token_address), ...coreMints])];
     const prices = await this.jupiter.getPrices(mints);
 
     // Update trackedTokens to reflect the actual universe
@@ -153,7 +168,45 @@ class SignalEngine {
       }
     }
 
-    console.log(`📡 Scan #${this.scanCount}: ${scanned} tokens scanned, ${signalsGenerated} signals generated`);
+    // Scan core tokens that weren't in the bulk results
+    const bulkMints = new Set(entries.map(e => e.token_address));
+    const missingCore = CORE_TOKENS.filter(t => !bulkMints.has(t.mint));
+
+    for (const token of missingCore) {
+      try {
+        const entry = await this.nansen.getTokenNetflow(token.mint);
+        if (!entry) continue;
+
+        const price = parseFloat(prices[token.mint]?.price) || 0;
+        const intel = this.nansen.computeIntelligenceFromNetflow(entry);
+
+        const prevScore = this.previousScores.get(token.mint) || null;
+        this.previousScores.set(token.mint, intel.sentimentScore);
+        intel.trend = this.nansen.getTrend(intel.sentimentScore, prevScore);
+
+        const snapshot = {
+          mint: token.mint,
+          symbol: token.symbol,
+          price,
+          ...intel,
+          scoreDelta: prevScore !== null ? intel.sentimentScore - prevScore : 0,
+          updatedAt: now,
+        };
+        this.tokenSnapshots.set(token.mint, snapshot);
+
+        const newSignals = this._detectSignals(snapshot, prevScore);
+        for (const sig of newSignals) {
+          this._addSignal(sig);
+          signalsGenerated++;
+        }
+
+        scanned++;
+      } catch (e) {
+        console.error(`Core token scan failed for ${token.symbol}: ${e.message}`);
+      }
+    }
+
+    console.log(`📡 Scan #${this.scanCount}: ${scanned} tokens scanned (${missingCore.length} core), ${signalsGenerated} signals generated`);
     return { scanned, signalsGenerated };
   }
 

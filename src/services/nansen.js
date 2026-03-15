@@ -81,6 +81,23 @@ class NansenService {
     return data;
   }
 
+  // Per-token smart money netflow — filtered bulk query for specific tokens
+  async getTokenNetflow(tokenAddress) {
+    const ck = `token_netflow:${tokenAddress}`;
+    const cached = this._cached(ck, 15 * 60 * 1000); // 15 min cache
+    if (cached) return cached;
+
+    const data = await this._fetch("/smart-money/netflow", {
+      chains: ["solana"],
+      token_addresses: [tokenAddress],
+      pagination: { per_page: 1 },
+    });
+
+    const entry = data?.data?.[0] || null;
+    if (entry) this._cache(ck, entry);
+    return entry;
+  }
+
   // Token Holder Distribution (smart money holders via TGM)
   async getHolderDistribution(tokenAddress) {
     const ck = `holders:${tokenAddress}`;
