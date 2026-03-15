@@ -379,6 +379,8 @@ class SignalEngine {
       snapshotsStored: this.tokenSnapshots.size,
       totalSignals: this.signals.length,
       scanCount: this.scanCount,
+      convictionThreshold: this.convictionThreshold,
+      holdingsChangeThreshold: this.holdingsChangeThreshold,
     };
   }
 }
