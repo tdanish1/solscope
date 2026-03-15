@@ -100,42 +100,7 @@ async function main() {
     console.log("  ⚠ WEBHOOK_BASE_URL not set — real-time webhook disabled");
   }
 
-  // Start scan loop
-  const scanInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 15) * 60 * 1000;
-
-  // Initial scan
-  console.log("");
-  console.log("  Running initial scan...");
-  await signalEngine.scan();
-
-  // Periodic scan
-  setInterval(async () => {
-    try {
-      const result = await signalEngine.scan();
-
-      // After each scan, match alerts against new signals
-      const feed = signalEngine.getFeed(10);
-      for (const signal of feed) {
-        if (Date.now() - signal.timestamp < scanInterval) {
-          await alertMatcher.matchSignal(signal);
-        }
-      }
-
-      // Also match threshold-based alerts against snapshots
-      for (const snapshot of signalEngine.getAllSnapshots()) {
-        await alertMatcher.matchSnapshot(snapshot);
-      }
-    } catch (e) {
-      console.error("Scan loop error:", e.message);
-    }
-  }, scanInterval);
-
-  // Daily brief (regenerate every hour)
-  setInterval(() => {
-    signalEngine.generateDailyBrief();
-  }, 60 * 60 * 1000);
-
-  // Launch
+  // Launch — bind port first so Railway's health check passes immediately
   const PORT = process.env.PORT || 3001;
   app.listen(PORT, () => {
     console.log("");
@@ -154,6 +119,40 @@ async function main() {
     if (nansen.enabled) console.log("  🧠 Nansen intelligence is ACTIVE");
     else console.log("  ⚠️  Nansen not configured (running in demo mode)");
     console.log("");
+
+    // Start scan loop after port is bound
+    const scanInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 15) * 60 * 1000;
+
+    // Initial scan (non-blocking so startup stays fast)
+    console.log("  Running initial scan...");
+    signalEngine.scan().catch(console.error);
+
+    // Periodic scan
+    setInterval(async () => {
+      try {
+        await signalEngine.scan();
+
+        // After each scan, match alerts against new signals
+        const feed = signalEngine.getFeed(10);
+        for (const signal of feed) {
+          if (Date.now() - signal.timestamp < scanInterval) {
+            await alertMatcher.matchSignal(signal);
+          }
+        }
+
+        // Also match threshold-based alerts against snapshots
+        for (const snapshot of signalEngine.getAllSnapshots()) {
+          await alertMatcher.matchSnapshot(snapshot);
+        }
+      } catch (e) {
+        console.error("Scan loop error:", e.message);
+      }
+    }, scanInterval);
+
+    // Daily brief (regenerate every hour)
+    setInterval(() => {
+      signalEngine.generateDailyBrief();
+    }, 60 * 60 * 1000);
   });
 }
 
