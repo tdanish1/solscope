@@ -283,7 +283,14 @@ class SignalEngine {
     // Try direct mint lookup
     let snapshot = this.tokenSnapshots.get(mintOrSymbol);
 
-    // Try symbol lookup
+    // Try symbol lookup in snapshots
+    if (!snapshot) {
+      for (const s of this.tokenSnapshots.values()) {
+        if (s.symbol === mintOrSymbol) { snapshot = s; break; }
+      }
+    }
+
+    // Fallback: Jupiter's known tokens
     if (!snapshot) {
       const mint = this.jupiter.resolveMint(mintOrSymbol);
       if (mint) snapshot = this.tokenSnapshots.get(mint);
