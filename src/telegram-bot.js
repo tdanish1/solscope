@@ -13,6 +13,7 @@ class SolScopeBot {
     }
 
     this.bot = new TelegramBot(token, { polling: true });
+    this.bot.on("polling_error", (err) => console.error("Telegram polling error:", err.message));
     this.services = services;
     this.enabled = true;
     this._register();

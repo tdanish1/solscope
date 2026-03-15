@@ -1,6 +1,11 @@
 
 // SOLSCOPE v2 — Smart Money Intelligence Feed
 
+// Prevent unhandled rejections (e.g. Telegram polling errors) from crashing the process
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection (ignored):", reason?.message || reason);
+});
+
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
