@@ -43,8 +43,8 @@ async function main() {
   const nansen = new NansenService(process.env.NANSEN_API_KEY);
 
   const signalEngine = new SignalEngine(helius, jupiter, nansen, {
-    convictionThreshold: parseInt(process.env.CONVICTION_THRESHOLD) || 1000000,
-    holdingsChangeThreshold: parseInt(process.env.HOLDINGS_CHANGE_THRESHOLD) || 15,
+    convictionThreshold: parseInt(process.env.CONVICTION_THRESHOLD) || 1000,
+    holdingsChangeThreshold: parseInt(process.env.HOLDINGS_CHANGE_THRESHOLD) || 10,
   });
 
   await signalEngine.initializeUniverse();
