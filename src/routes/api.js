@@ -48,36 +48,20 @@ export default function createRoutes(services) {
     res.json(result);
   });
 
-  // Debug: inspect Nansen responses — with and without token filter
-  router.get("/debug/nansen/:symbol", async (req, res) => {
-    const mint = jupiter.resolveMint(req.params.symbol);
-    if (!mint) return res.status(404).json({ error: "Unknown symbol" });
-
-    nansen.cache.delete(`netflow:${mint}`);
-    nansen.cache.delete(`holdings:${mint}`);
-
-    // Test 1: current format (with token filter)
-    const [netflowFiltered, holdingsFiltered] = await Promise.all([
-      nansen.getSmartMoneyNetflow(mint),
-      nansen.getSmartMoneyHoldings(mint),
-    ]);
-
-    // Test 2: no token filter — see if any Solana data comes back at all
-    const netflowNoFilter = await nansen._fetch("/smart-money/netflow", {
-      chains: ["solana"],
-    });
-
-    // Test 3: try alternate endpoint names Nansen may use
-    const altEndpoint = await nansen._fetch("/token/smart-money", {
-      chains: ["solana"],
-      filters: { token_address: mint },
-    });
-
+  // Debug: see raw Nansen bulk netflow response
+  router.get("/debug/nansen", async (req, res) => {
+    nansen.cache.delete("bulk_netflow_solana");
+    const raw = await nansen.getAllSolanaNetflow(20);
+    const trackedMints = [...signalEngine.trackedTokens.keys()];
+    const matches = raw?.data
+      ? trackedMints.filter(m => raw.data.some(e => e.token_address === m))
+      : [];
     res.json({
-      mint,
-      test1_withFilter: { netflow: netflowFiltered, holdings: holdingsFiltered },
-      test2_noFilter: netflowNoFilter,
-      test3_altEndpoint: altEndpoint,
+      nansenEnabled: nansen.enabled,
+      rawResponse: raw,
+      trackedMints,
+      matchCount: matches.length,
+      matchedMints: matches,
     });
   });
 
