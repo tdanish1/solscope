@@ -165,6 +165,11 @@ class SignalEngine {
     const signals = [];
     const { mint, symbol } = snapshot;
 
+    // Quality filter: skip low-quality tokens
+    if ((snapshot.marketCap || 0) < 50000 || (snapshot.smartMoneyCount || 0) < 2) {
+      return signals;
+    }
+
     // Signal 1: Conviction Increase
     if (
       snapshot._isAccumulating &&
