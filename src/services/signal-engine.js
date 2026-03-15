@@ -95,52 +95,45 @@ class SignalEngine {
   async scan() {
     this.scanCount++;
     const now = Date.now();
-    const hotInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 15) * 60 * 1000;
-    const warmInterval = (parseInt(process.env.WARM_REFRESH_MINUTES) || 60) * 60 * 1000;
 
-    // Fetch bulk Nansen netflow once per scan (saves credits vs per-token calls)
+    // Nansen's response IS the token universe — whatever smart money is trading
     const nansenData = await this.nansen.getAllSolanaNetflow(100);
-    const nansenByMint = new Map();
-    if (nansenData?.data) {
-      for (const entry of nansenData.data) {
-        nansenByMint.set(entry.token_address, entry);
+    if (!nansenData?.data?.length) {
+      console.log(`📡 Scan #${this.scanCount}: Nansen returned no data`);
+      return { scanned: 0, signalsGenerated: 0 };
+    }
+
+    const entries = nansenData.data;
+
+    // Fetch all prices in one Jupiter call
+    const mints = entries.map(e => e.token_address);
+    const prices = await this.jupiter.getPrices(mints);
+
+    // Update trackedTokens to reflect the actual universe
+    for (const entry of entries) {
+      if (!this.trackedTokens.has(entry.token_address)) {
+        this.trackedTokens.set(entry.token_address, { symbol: entry.token_symbol, tier: "warm" });
       }
     }
 
     let scanned = 0;
     let signalsGenerated = 0;
 
-    for (const [mint, token] of this.trackedTokens) {
-      const interval = token.tier === "hot" ? hotInterval : warmInterval;
-      if (now - token.lastScan < interval) continue;
+    for (const entry of entries) {
+      const mint = entry.token_address;
+      const symbol = entry.token_symbol || mint.slice(0, 8);
 
       try {
-        // Step 1: Get market context from Jupiter
-        const prices = await this.jupiter.getPrices([mint]);
-        const priceData = prices[mint];
-        const price = priceData ? parseFloat(priceData.price) : token.price;
-        token.price = price;
+        const price = parseFloat(prices[mint]?.price) || 0;
+        const intel = this.nansen.computeIntelligenceFromNetflow(entry);
 
-        // Step 2: Get smart money intelligence from Nansen bulk data
-        const nansenEntry = nansenByMint.get(mint);
-        if (!nansenEntry) {
-          token.lastScan = now;
-          scanned++;
-          continue;
-        }
-        const intel = this.nansen.computeIntelligenceFromNetflow(nansenEntry);
-
-        // Step 3: Store previous score for delta detection
         const prevScore = this.previousScores.get(mint) || null;
         this.previousScores.set(mint, intel.sentimentScore);
-
-        // Step 4: Update trend with previous score context
         intel.trend = this.nansen.getTrend(intel.sentimentScore, prevScore);
 
-        // Step 5: Build full snapshot
         const snapshot = {
           mint,
-          symbol: token.symbol,
+          symbol,
           price,
           ...intel,
           scoreDelta: prevScore !== null ? intel.sentimentScore - prevScore : 0,
@@ -148,23 +141,15 @@ class SignalEngine {
         };
         this.tokenSnapshots.set(mint, snapshot);
 
-        // Step 6: Generate signals from snapshot
         const newSignals = this._detectSignals(snapshot, prevScore);
         for (const sig of newSignals) {
           this._addSignal(sig);
           signalsGenerated++;
         }
 
-        token.lastScan = now;
         scanned++;
-
-        // Auto-demote hot tokens back to warm after hotScansRemaining hits 0
-        if (token.tier === "hot") {
-          token.hotScansRemaining = (token.hotScansRemaining || 1) - 1;
-          if (token.hotScansRemaining <= 0) token.tier = "warm";
-        }
       } catch (e) {
-        console.error(`Scan failed for ${token.symbol}: ${e.message}`);
+        console.error(`Scan failed for ${symbol}: ${e.message}`);
       }
     }
 
