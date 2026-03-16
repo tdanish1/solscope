@@ -168,22 +168,18 @@ class SignalEngine {
       }
     }
 
-    // Scan core tokens that weren't in the bulk results
-    const bulkMints = new Set(entries.map(e => e.token_address));
-    const missingCore = CORE_TOKENS.filter(t => !bulkMints.has(t.mint));
+    // Always fetch core tokens via flow-intelligence (more accurate than bulk)
+    // This overrides any bulk data for core tokens
+    const coreMintSet = new Set(CORE_TOKENS.map(t => t.mint));
+    let coreScanned = 0;
 
-    for (const token of missingCore) {
+    for (const token of CORE_TOKENS) {
       try {
         const entry = await this.nansen.getTokenNetflow(token.mint);
         if (!entry) continue;
 
-        // Fill fields the holders endpoint doesn't provide
-        entry.token_symbol = entry.token_symbol || token.symbol;
+        entry.token_symbol = token.symbol;
         const price = parseFloat(prices[token.mint]?.price) || 0;
-        const jupData = prices[token.mint];
-        if (!entry.market_cap_usd && jupData?.extraInfo?.quotedPrice?.buyPrice) {
-          entry.market_cap_usd = 0; // Jupiter doesn't reliably give mcap, leave for DexScreener
-        }
 
         const intel = this.nansen.computeIntelligenceFromNetflow(entry);
 
@@ -207,13 +203,13 @@ class SignalEngine {
           signalsGenerated++;
         }
 
-        scanned++;
+        coreScanned++;
       } catch (e) {
         console.error(`Core token scan failed for ${token.symbol}: ${e.message}`);
       }
     }
 
-    console.log(`📡 Scan #${this.scanCount}: ${scanned} tokens scanned (${missingCore.length} core), ${signalsGenerated} signals generated`);
+    console.log(`📡 Scan #${this.scanCount}: ${scanned} bulk + ${coreScanned} core tokens, ${signalsGenerated} signals`);
     return { scanned, signalsGenerated };
   }
 
