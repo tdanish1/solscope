@@ -83,10 +83,18 @@ class NansenService {
 
   // Per-token smart money intelligence via TGM flow-intelligence
   // Fetches 1h, 1d, and 7d timeframes. Works for ALL tokens including native SOL.
+  // Each timeframe is cached independently with its own TTL to optimize credit usage:
+  //   1h  -> 5 min   (fast-moving, needs freshness)
+  //   1d  -> 15 min  (standard scan interval)
+  //   7d  -> 60 min  (slow-moving, saves ~2/3 of 7d API calls)
   async getTokenNetflow(tokenAddress) {
-    const ck = `token_netflow:${tokenAddress}`;
-    const cached = this._cached(ck, 15 * 60 * 1000);
-    if (cached) return cached;
+    const ck1h = `token_netflow_1h:${tokenAddress}`;
+    const ck1d = `token_netflow_1d:${tokenAddress}`;
+    const ck7d = `token_netflow_7d:${tokenAddress}`;
+
+    const cached1h = this._cached(ck1h, 5 * 60 * 1000);
+    const cached1d = this._cached(ck1d, 15 * 60 * 1000);
+    const cached7d = this._cached(ck7d, 60 * 60 * 1000);
 
     const fetchFlow = (tf) => this._fetch("/tgm/flow-intelligence", {
       chain: "solana",
@@ -94,11 +102,17 @@ class NansenService {
       timeframe: tf,
     });
 
+    // Only fetch timeframes whose cache has expired
     const [data1h, data1d, data7d] = await Promise.all([
-      fetchFlow("1h"),
-      fetchFlow("1d"),
-      fetchFlow("7d"),
+      cached1h ? Promise.resolve(cached1h) : fetchFlow("1h"),
+      cached1d ? Promise.resolve(cached1d) : fetchFlow("1d"),
+      cached7d ? Promise.resolve(cached7d) : fetchFlow("7d"),
     ]);
+
+    // Cache each raw API response individually
+    if (!cached1h && data1h) this._cache(ck1h, data1h);
+    if (!cached1d && data1d) this._cache(ck1d, data1d);
+    if (!cached7d && data7d) this._cache(ck7d, data7d);
 
     const f1d = data1d?.data?.[0];
     if (!f1d) return null;
@@ -115,7 +129,7 @@ class NansenService {
     const flow1d = sumSmartFlow(f1d);
     const flow7d = sumSmartFlow(data7d?.data?.[0]);
 
-    const entry = {
+    return {
       token_address: tokenAddress,
       token_symbol: null,
       net_flow_1h_usd: flow1h.flow,
@@ -127,9 +141,6 @@ class NansenService {
       market_cap_usd: 0,
       token_sectors: [],
     };
-
-    this._cache(ck, entry);
-    return entry;
   }
 
   // Token Holder Distribution (smart money holders via TGM)

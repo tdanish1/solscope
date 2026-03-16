@@ -115,9 +115,9 @@ class SolScopeBot {
     });
 
     // /token <symbol> — Token intelligence page
-    bot.onText(/\/token (.+)/, (msg, match) => {
+    bot.onText(/\/token (.+)/, async (msg, match) => {
       const query = match[1].trim().toUpperCase();
-      const page = signalEngine.getTokenPage(query);
+      const page = await signalEngine.getTokenPage(query);
 
       if (!page) {
         bot.sendMessage(msg.chat.id, `❌ Token "${query}" not found. Try SOL, JUP, BONK, etc.`);
@@ -139,10 +139,10 @@ class SolScopeBot {
         `Net flow: ${this._fmt(page.netflowUsd)}`,
         `Holdings change: ${page.holdingsChangePct > 0 ? "+" : ""}${page.holdingsChangePct.toFixed(1)}%`,
         "",
-        `*Holder Distribution*`,
-        `Smart Money: ${page.holderDistribution.smartMoney.toFixed(1)}%`,
-        `Retail: ${page.holderDistribution.retail.toFixed(1)}%`,
-        `Exchange: ${page.holderDistribution.exchange.toFixed(1)}%`,
+        `*Smart Money Activity*`,
+        `Active wallets: ${page.smartMoneyCount}`,
+        `1h flow: ${this._fmt(page.netflow1h || 0)}`,
+        `7d flow: ${this._fmt(page.netflow7d || 0)}`,
         "",
         `Price: $${page.price < 0.01 ? page.price.toFixed(6) : page.price.toFixed(4)}`,
       ];
