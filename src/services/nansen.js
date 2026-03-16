@@ -1,5 +1,3 @@
-// Nansen API service
-
 class NansenService {
   constructor(apiKey) {
     this.apiKey = apiKey;
@@ -66,7 +64,6 @@ class NansenService {
     }
   }
 
-  // Bulk Smart Money Net Flow — all Solana tokens Nansen is tracking, no per-token filter needed
   async getAllSolanaNetflow(perPage = 50) {
     const ck = `bulk_netflow_solana`;
     const cached = this._cached(ck, 10 * 60 * 1000);
@@ -81,12 +78,7 @@ class NansenService {
     return data;
   }
 
-  // Per-token smart money intelligence via TGM flow-intelligence
-  // Fetches 1h, 1d, and 7d timeframes. Works for ALL tokens including native SOL.
-  // Each timeframe is cached independently with its own TTL to optimize credit usage:
-  //   1h  -> 5 min   (fast-moving, needs freshness)
-  //   1d  -> 15 min  (standard scan interval)
-  //   7d  -> 60 min  (slow-moving, saves ~2/3 of 7d API calls)
+  // Per-timeframe cache TTLs: 1h=5min, 1d=15min, 7d=60min
   async getTokenNetflow(tokenAddress) {
     const ck1h = `token_netflow_1h:${tokenAddress}`;
     const ck1d = `token_netflow_1d:${tokenAddress}`;
@@ -102,14 +94,12 @@ class NansenService {
       timeframe: tf,
     });
 
-    // Only fetch timeframes whose cache has expired
     const [data1h, data1d, data7d] = await Promise.all([
       cached1h ? Promise.resolve(cached1h) : fetchFlow("1h"),
       cached1d ? Promise.resolve(cached1d) : fetchFlow("1d"),
       cached7d ? Promise.resolve(cached7d) : fetchFlow("7d"),
     ]);
 
-    // Cache each raw API response individually
     if (!cached1h && data1h) this._cache(ck1h, data1h);
     if (!cached1d && data1d) this._cache(ck1d, data1d);
     if (!cached7d && data7d) this._cache(ck7d, data7d);
@@ -143,7 +133,6 @@ class NansenService {
     };
   }
 
-  // Token Holder Distribution (smart money holders via TGM)
   async getHolderDistribution(tokenAddress) {
     const ck = `holders:${tokenAddress}`;
     const cached = this._cached(ck, 30 * 60 * 1000);
@@ -160,11 +149,6 @@ class NansenService {
     return data;
   }
 
-  // ════════════════════════════════════════
-  // DERIVED INTELLIGENCE (safe to display)
-  // ════════════════════════════════════════
-
-  // Compute full intelligence snapshot from a Nansen netflow entry
   computeIntelligenceFromNetflow(entry) {
     const netflow24h = entry.net_flow_24h_usd || 0;
     const netflow1h  = entry.net_flow_1h_usd  || 0;
@@ -173,7 +157,6 @@ class NansenService {
 
     let score = 50;
 
-    // Factor 1: 24h net flow direction & magnitude (±25 pts)
     if      (netflow24h >  50000) score += 25;
     else if (netflow24h >  10000) score += 20;
     else if (netflow24h >   5000) score += 15;
@@ -185,21 +168,18 @@ class NansenService {
     else if (netflow24h > -50000) score -= 20;
     else                          score -= 25;
 
-    // Factor 2: Smart money wallet count (±15 pts) — more wallets = stronger conviction
     if      (traderCount >= 20) score += 15;
     else if (traderCount >= 10) score += 10;
     else if (traderCount >=  5) score +=  7;
     else if (traderCount >=  2) score +=  3;
 
-    // Factor 3: 7d trend alignment with 24h (±10 pts)
-    if      (netflow7d > 0 && netflow24h > 0) score += 10; // sustained accumulation
-    else if (netflow7d < 0 && netflow24h < 0) score -= 10; // sustained distribution
-    else if (netflow7d < 0 && netflow24h > 0) score +=  3; // possible reversal (bullish)
-    else if (netflow7d > 0 && netflow24h < 0) score -=  5; // trend breaking down
+    if      (netflow7d > 0 && netflow24h > 0) score += 10;
+    else if (netflow7d < 0 && netflow24h < 0) score -= 10;
+    else if (netflow7d < 0 && netflow24h > 0) score +=  3;
+    else if (netflow7d > 0 && netflow24h < 0) score -=  5;
 
     score = Math.max(0, Math.min(100, Math.round(score)));
 
-    // holdingsChangePct: daily flow velocity relative to 7d baseline
     const dailyAvg7d = netflow7d / 7;
     const holdingsChangePct = dailyAvg7d !== 0
       ? Math.max(-100, Math.min(100, Math.round((netflow24h / Math.abs(dailyAvg7d) - 1) * 10)))

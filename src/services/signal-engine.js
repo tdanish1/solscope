@@ -1,17 +1,3 @@
-// Signal processing engine
-// "Helius detects, Jupiter contextualizes,
-//  Nansen enriches, SolScope scores,
-//  then alerts fan out."
-//
-// This is the heart of SolScope.
-// It produces 5 signal types:
-//   1. Conviction Increase
-//   2. Conviction Decrease
-//   3. New Smart Money Entry
-//   4. Smart Money Exit
-//   5. Liquidity Risk
-
-// Core Solana tokens that should always have intelligence data
 const CORE_TOKENS = [
   { symbol: 'SOL', mint: 'So11111111111111111111111111111111111111112' },
   { symbol: 'JUP', mint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN' },
@@ -58,26 +44,17 @@ class SignalEngine {
     this.jupiter = jupiter;
     this.nansen = nansen;
 
-    // Thresholds — calibrated for Nansen Solana smart money flows (thousands, not millions)
-    this.convictionThreshold = config.convictionThreshold || 1000; // $1K net flow
-    this.holdingsChangeThreshold = config.holdingsChangeThreshold || 5; // flow velocity score
-
-    // State
-    this.tokenSnapshots = new Map();  // mint → latest intelligence snapshot
-    this.previousScores = new Map();  // mint → previous sentiment score
-    this.signals = [];                // chronological signal feed
-    this.dailyBrief = null;           // morning brief cache
+    this.convictionThreshold = config.convictionThreshold || 1000;
+    this.holdingsChangeThreshold = config.holdingsChangeThreshold || 5;
+    this.tokenSnapshots = new Map();
+    this.previousScores = new Map();
+    this.signals = [];
+    this.dailyBrief = null;
     this.scanCount = 0;
-
-    // Tracked token universe (hot/warm/cold tiers)
-    this.trackedTokens = new Map(); // mint → { symbol, tier, lastScan, hotScansRemaining }
+    this.trackedTokens = new Map();
 
     console.log("  ✓ Signal engine initialized");
   }
-
-  // ════════════════════════════════════════
-  // TOKEN UNIVERSE MANAGEMENT
-  // ════════════════════════════════════════
 
   async initializeUniverse() {
     const tokens = await this.jupiter.buildTokenUniverse();
@@ -92,8 +69,6 @@ class SignalEngine {
     console.log(`  ✓ Tracking ${this.trackedTokens.size} tokens`);
   }
 
-  // Promote a token to hot tier (scan more frequently)
-  // Auto-demotes back to warm after 2 hot scans to protect Nansen credits
   promoteToken(mint) {
     const t = this.trackedTokens.get(mint);
     if (t) {
@@ -102,15 +77,10 @@ class SignalEngine {
     }
   }
 
-  // ════════════════════════════════════════
-  // MAIN SCAN LOOP
-  // ════════════════════════════════════════
-
   async scan() {
     this.scanCount++;
     const now = Date.now();
 
-    // Nansen's response IS the token universe — whatever smart money is trading
     const nansenData = await this.nansen.getAllSolanaNetflow(100);
     if (!nansenData?.data?.length) {
       console.log(`📡 Scan #${this.scanCount}: Nansen returned no data`);
@@ -119,12 +89,10 @@ class SignalEngine {
 
     const entries = nansenData.data;
 
-    // Fetch all prices in one Jupiter call (include core tokens)
     const coreMints = CORE_TOKENS.map(t => t.mint);
     const mints = [...new Set([...entries.map(e => e.token_address), ...coreMints])];
     const prices = await this.jupiter.getPrices(mints);
 
-    // Update trackedTokens to reflect the actual universe
     for (const entry of entries) {
       if (!this.trackedTokens.has(entry.token_address)) {
         this.trackedTokens.set(entry.token_address, { symbol: entry.token_symbol, tier: "warm" });
@@ -168,9 +136,6 @@ class SignalEngine {
       }
     }
 
-    // Always fetch core tokens via flow-intelligence (more accurate than bulk)
-    // This overrides any bulk data for core tokens
-    const coreMintSet = new Set(CORE_TOKENS.map(t => t.mint));
     let coreScanned = 0;
 
     for (const token of CORE_TOKENS) {
@@ -187,7 +152,6 @@ class SignalEngine {
         this.previousScores.set(token.mint, intel.sentimentScore);
         intel.trend = this.nansen.getTrend(intel.sentimentScore, prevScore);
 
-        // Preserve marketCap from bulk scan if flow-intelligence returns 0
         const existingSnapshot = this.tokenSnapshots.get(token.mint);
         const snapshot = {
           mint: token.mint,
@@ -216,21 +180,15 @@ class SignalEngine {
     return { scanned, signalsGenerated };
   }
 
-  // ════════════════════════════════════════
-  // SIGNAL DETECTION
-  // ════════════════════════════════════════
-
   _detectSignals(snapshot, prevScore) {
     const signals = [];
     const { mint, symbol } = snapshot;
 
-    // Quality filter: skip low-quality tokens (core tokens always pass)
     const isCore = CORE_TOKENS.some(t => t.mint === mint);
     if (!isCore && ((snapshot.marketCap || 0) < 100000 || (snapshot.smartMoneyCount || 0) < 3)) {
       return signals;
     }
 
-    // Signal 1: Conviction Increase
     if (
       snapshot._isAccumulating &&
       snapshot.netflowUsd > this.convictionThreshold &&
@@ -250,7 +208,6 @@ class SignalEngine {
       });
     }
 
-    // Signal 2: Conviction Decrease
     if (
       snapshot._isDistributing &&
       snapshot.netflowUsd < -this.convictionThreshold &&
@@ -269,7 +226,6 @@ class SignalEngine {
       });
     }
 
-    // Signal 3: New Smart Money Entry
     if (snapshot._hasNewEntry) {
       signals.push({
         type: SIGNAL_TYPES.SMART_MONEY_ENTRY,
@@ -284,7 +240,6 @@ class SignalEngine {
       });
     }
 
-    // Signal 4: Smart Money Exit
     if (snapshot._hasExit) {
       signals.push({
         type: SIGNAL_TYPES.SMART_MONEY_EXIT,
@@ -298,7 +253,6 @@ class SignalEngine {
       });
     }
 
-    // Signal 5: Sentiment Spike (large sudden change)
     if (prevScore !== null) {
       const delta = snapshot.sentimentScore - prevScore;
       if (Math.abs(delta) >= 15) {
@@ -327,41 +281,31 @@ class SignalEngine {
     signal.emoji = SIGNAL_EMOJI[signal.type];
     signal.label = SIGNAL_LABELS[signal.type];
 
-    // Remove existing signal with same type+mint to prevent duplicates
+    // Dedup: one signal per type+mint
     this.signals = this.signals.filter(
       (s) => !(s.type === signal.type && s.mint === signal.mint)
     );
 
     this.signals.unshift(signal);
 
-    // Keep last 200 signals
     if (this.signals.length > 200) {
       this.signals = this.signals.slice(0, 200);
     }
   }
 
-  // ════════════════════════════════════════
-  // PUBLIC API — Feed & Pages
-  // ════════════════════════════════════════
-
-  // Get the intelligence feed (main product)
   getFeed(limit = 20) {
     return this.signals.slice(0, limit);
   }
 
-  // Get token intelligence page (fetches holders on-demand for the detail view)
   async getTokenPage(mintOrSymbol) {
-    // Try direct mint lookup
     let snapshot = this.tokenSnapshots.get(mintOrSymbol);
 
-    // Try symbol lookup in snapshots
     if (!snapshot) {
       for (const s of this.tokenSnapshots.values()) {
         if (s.symbol === mintOrSymbol) { snapshot = s; break; }
       }
     }
 
-    // Fallback: Jupiter's known tokens
     if (!snapshot) {
       const mint = this.jupiter.resolveMint(mintOrSymbol);
       if (mint) snapshot = this.tokenSnapshots.get(mint);
@@ -389,15 +333,10 @@ class SignalEngine {
     };
   }
 
-  // Get all token snapshots (for feed enrichment)
   getAllSnapshots() {
     return [...this.tokenSnapshots.values()]
       .sort((a, b) => b.sentimentScore - a.sentimentScore);
   }
-
-  // ════════════════════════════════════════
-  // DAILY BRIEF
-  // ════════════════════════════════════════
 
   generateDailyBrief() {
     const snapshots = this.getAllSnapshots();
