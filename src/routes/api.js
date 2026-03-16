@@ -1,130 +1,150 @@
 import { Router } from "express";
 
-// CoinGecko + DexScreener cache (shared across all users)
-const marketCache = new Map();
-const MARKET_CACHE_TTL = 60_000; // 60s
+const MARKET_CACHE_TTL = 60_000;
+const FETCH_TIMEOUT = 10_000;
+const marketCache = new Map();  // key → { d: data, t: timestamp }
+const inflight = new Map();     // key → Promise (thundering herd dedup)
 
 function getCached(key) {
   const e = marketCache.get(key);
   if (e && Date.now() - e.t < MARKET_CACHE_TTL) return e.d;
   return null;
 }
+function getStale(key) {
+  return marketCache.get(key)?.d || null;
+}
 function setCache(key, data) {
   marketCache.set(key, { d: data, t: Date.now() });
   if (marketCache.size > 500) marketCache.delete(marketCache.keys().next().value);
 }
 
-async function fetchTokenMarketData(mint) {
-  const cached = getCached(`market:${mint}`);
-  if (cached) return cached;
-
-  const isSol = mint === 'So11111111111111111111111111111111111111112';
-
-  const [cgData, dexData] = await Promise.all([
-    (async () => {
-      try {
-        const url = isSol
-          ? 'https://api.coingecko.com/api/v3/coins/solana?localization=false&tickers=false&community_data=false&developer_data=false'
-          : `https://api.coingecko.com/api/v3/coins/solana/contract/${mint}`;
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const cg = await res.json();
-        return {
-          price: cg.market_data?.current_price?.usd || 0,
-          priceChange24h: cg.market_data?.price_change_percentage_24h || 0,
-          volume24h: cg.market_data?.total_volume?.usd || 0,
-          marketCap: cg.market_data?.market_cap?.usd || 0,
-        };
-      } catch { return null; }
-    })(),
-    (async () => {
-      try {
-        const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
-        if (!res.ok) return null;
-        const d = await res.json();
-        const pair = (d.pairs || []).find(p => p.chainId === 'solana' && p.baseToken?.address === mint);
-        if (!pair) return null;
-        return {
-          price: parseFloat(pair.priceUsd) || 0,
-          priceChange24h: pair.priceChange?.h24 || 0,
-          volume24h: pair.volume?.h24 || 0,
-          liquidity: pair.liquidity?.usd || 0,
-          marketCap: pair.marketCap || pair.fdv || 0,
-          imageUrl: pair.info?.imageUrl || null,
-        };
-      } catch { return null; }
-    })(),
-  ]);
-
-  const result = {
-    mint,
-    price: cgData?.price || dexData?.price || 0,
-    priceChange24h: cgData?.priceChange24h ?? dexData?.priceChange24h ?? 0,
-    volume24h: cgData?.volume24h || dexData?.volume24h || 0,
-    liquidity: dexData?.liquidity || 0,
-    marketCap: cgData?.marketCap || dexData?.marketCap || 0,
-    imageUrl: dexData?.imageUrl || null,
-  };
-
-  setCache(`market:${mint}`, result);
-  return result;
+function fetchWithTimeout(url, ms = FETCH_TIMEOUT) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
 }
 
-async function fetchBatchPrices(mints) {
-  const cacheKey = `batch:${mints.sort().join(',')}`;
-  const cached = getCached(cacheKey);
-  if (cached) return cached;
+// Dedup: if a fetch for this key is already in-flight, reuse it
+function dedup(key, fn) {
+  const cached = getCached(key);
+  if (cached) return Promise.resolve(cached);
 
-  const results = {};
+  if (inflight.has(key)) return inflight.get(key);
 
-  // DexScreener batch (handles most tokens)
-  try {
-    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mints.join(',')}`);
-    if (res.ok) {
-      const data = await res.json();
-      for (const mint of mints) {
-        const pair = (data.pairs || []).find(p =>
-          p.chainId === 'solana' && p.baseToken?.address === mint
-        );
-        if (pair) {
-          results[mint] = {
+  const promise = fn()
+    .then(result => { setCache(key, result); return result; })
+    .catch(() => getStale(key))  // serve stale data on failure
+    .finally(() => inflight.delete(key));
+
+  inflight.set(key, promise);
+  return promise;
+}
+
+function fetchTokenMarketData(mint) {
+  return dedup(`market:${mint}`, async () => {
+    const isSol = mint === 'So11111111111111111111111111111111111111112';
+
+    const [cgData, dexData] = await Promise.all([
+      (async () => {
+        try {
+          const url = isSol
+            ? 'https://api.coingecko.com/api/v3/coins/solana?localization=false&tickers=false&community_data=false&developer_data=false'
+            : `https://api.coingecko.com/api/v3/coins/solana/contract/${mint}`;
+          const res = await fetchWithTimeout(url);
+          if (!res.ok) return null;
+          const cg = await res.json();
+          return {
+            price: cg.market_data?.current_price?.usd || 0,
+            priceChange24h: cg.market_data?.price_change_percentage_24h || 0,
+            volume24h: cg.market_data?.total_volume?.usd || 0,
+            marketCap: cg.market_data?.market_cap?.usd || 0,
+          };
+        } catch { return null; }
+      })(),
+      (async () => {
+        try {
+          const res = await fetchWithTimeout(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+          if (!res.ok) return null;
+          const d = await res.json();
+          const pair = (d.pairs || []).find(p => p.chainId === 'solana' && p.baseToken?.address === mint);
+          if (!pair) return null;
+          return {
             price: parseFloat(pair.priceUsd) || 0,
-            change24h: pair.priceChange?.h24 || 0,
+            priceChange24h: pair.priceChange?.h24 || 0,
+            volume24h: pair.volume?.h24 || 0,
+            liquidity: pair.liquidity?.usd || 0,
+            marketCap: pair.marketCap || pair.fdv || 0,
             imageUrl: pair.info?.imageUrl || null,
           };
-        }
-      }
-    }
-  } catch {}
+        } catch { return null; }
+      })(),
+    ]);
 
-  // CoinGecko fallback for missing (e.g. SOL)
-  const missing = mints.filter(m => !results[m]);
-  if (missing.length > 0) {
+    return {
+      mint,
+      price: cgData?.price || dexData?.price || 0,
+      priceChange24h: cgData?.priceChange24h ?? dexData?.priceChange24h ?? 0,
+      volume24h: cgData?.volume24h || dexData?.volume24h || 0,
+      liquidity: dexData?.liquidity || 0,
+      marketCap: cgData?.marketCap || dexData?.marketCap || 0,
+      imageUrl: dexData?.imageUrl || null,
+    };
+  });
+}
+
+function fetchBatchPrices(mints) {
+  const sortedKey = `batch:${[...mints].sort().join(',')}`;
+  return dedup(sortedKey, async () => {
+    const results = {};
+
     try {
-      const cgIds = missing.map(m =>
-        m === 'So11111111111111111111111111111111111111112' ? 'solana' : null
-      ).filter(Boolean);
-      if (cgIds.length > 0) {
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgIds.join(',')}&vs_currencies=usd&include_24hr_change=true`);
-        if (res.ok) {
-          const data = await res.json();
-          for (const mint of missing) {
-            const cgKey = mint === 'So11111111111111111111111111111111111111112' ? 'solana' : null;
-            if (cgKey && data[cgKey]) {
-              results[mint] = {
-                price: data[cgKey].usd || 0,
-                change24h: data[cgKey].usd_24h_change || 0,
-                imageUrl: null,
-              };
-            }
+      const res = await fetchWithTimeout(`https://api.dexscreener.com/latest/dex/tokens/${mints.join(',')}`);
+      if (res.ok) {
+        const data = await res.json();
+        for (const mint of mints) {
+          const pair = (data.pairs || []).find(p =>
+            p.chainId === 'solana' && p.baseToken?.address === mint
+          );
+          if (pair) {
+            results[mint] = {
+              price: parseFloat(pair.priceUsd) || 0,
+              change24h: pair.priceChange?.h24 || 0,
+              imageUrl: pair.info?.imageUrl || null,
+            };
           }
         }
       }
     } catch {}
-  }
 
-  setCache(cacheKey, results);
-  return results;
+    const missing = mints.filter(m => !results[m]);
+    if (missing.length > 0) {
+      try {
+        const cgIds = missing.map(m =>
+          m === 'So11111111111111111111111111111111111111112' ? 'solana' : null
+        ).filter(Boolean);
+        if (cgIds.length > 0) {
+          const res = await fetchWithTimeout(
+            `https://api.coingecko.com/api/v3/simple/price?ids=${cgIds.join(',')}&vs_currencies=usd&include_24hr_change=true`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            for (const mint of missing) {
+              const cgKey = mint === 'So11111111111111111111111111111111111111112' ? 'solana' : null;
+              if (cgKey && data[cgKey]) {
+                results[mint] = {
+                  price: data[cgKey].usd || 0,
+                  change24h: data[cgKey].usd_24h_change || 0,
+                  imageUrl: null,
+                };
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    return results;
+  });
 }
 
 export default function createRoutes(services) {

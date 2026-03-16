@@ -1,14 +1,3 @@
-// Alert matching system
-// Users subscribe to internal signals, NOT raw API queries.
-// This means the expensive part (fetching data) is shared,
-// and the matching part (checking rules) is free.
-//
-// Example user rule:
-//   "Notify me when any token's conviction score > 75"
-//
-// The engine checks this against already-computed snapshots.
-// Zero additional API calls per user.
-
 class AlertMatcher {
   constructor(telegramBot) {
     this.telegram = telegramBot;
@@ -19,16 +8,11 @@ class AlertMatcher {
     // userId → alert delivery preferences
     this.userPrefs = new Map();
 
-    // Track recently fired alerts to prevent spam
-    // key = `${userId}:${ruleId}:${tokenMint}`, value = timestamp
     this.cooldowns = new Map();
 
     this.alertsSent = 0;
   }
 
-  // ════════════════════════════════════════
-  // RULE MANAGEMENT
-  // ════════════════════════════════════════
 
   addRule(userId, rule) {
     if (!this.userRules.has(userId)) {
@@ -37,8 +21,6 @@ class AlertMatcher {
 
     const rules = this.userRules.get(userId);
 
-    // Free tier limit: 3 rules
-    // Pro: 10 rules, Pro+: unlimited
     const limit = rule.tier === "pro_plus" ? 100 : rule.tier === "pro" ? 10 : 3;
     if (rules.length >= limit) {
       return { success: false, error: `Rule limit reached (${limit}). Upgrade for more.` };
@@ -82,11 +64,6 @@ class AlertMatcher {
     return this.userRules.get(userId) || [];
   }
 
-  // ════════════════════════════════════════
-  // MATCHING — Called after each scan
-  // ════════════════════════════════════════
-
-  // Match all user rules against a new signal
   async matchSignal(signal) {
     const notifications = [];
 
@@ -102,7 +79,6 @@ class AlertMatcher {
       }
     }
 
-    // Send notifications
     for (const n of notifications) {
       await this._notify(n.userId, n.signal);
     }
@@ -110,7 +86,6 @@ class AlertMatcher {
     return notifications.length;
   }
 
-  // Match all user rules against a token snapshot (for threshold-based alerts)
   async matchSnapshot(snapshot) {
     const notifications = [];
 
@@ -147,7 +122,6 @@ class AlertMatcher {
     return notifications.length;
   }
 
-  // Check if a signal matches a rule
   _matches(rule, signal) {
     // Token scope filter
     if (rule.tokenScope !== "any" && rule.tokenScope !== signal.mint) return false;
@@ -162,7 +136,6 @@ class AlertMatcher {
     return true;
   }
 
-  // Check if a snapshot matches threshold-based rules
   _matchesSnapshot(rule, snapshot) {
     if (rule.tokenScope !== "any" && rule.tokenScope !== snapshot.mint) return false;
 
@@ -179,10 +152,6 @@ class AlertMatcher {
     return matched;
   }
 
-  // ════════════════════════════════════════
-  // COOLDOWNS
-  // ════════════════════════════════════════
-
   _checkCooldown(userId, ruleId, mint) {
     const key = `${userId}:${ruleId}:${mint}`;
     const last = this.cooldowns.get(key);
@@ -194,7 +163,6 @@ class AlertMatcher {
     const key = `${userId}:${ruleId}:${mint}`;
     this.cooldowns.set(key, { t: Date.now(), cd: cooldownMs });
 
-    // Clean old cooldowns
     if (this.cooldowns.size > 5000) {
       const cutoff = Date.now() - 24 * 60 * 60 * 1000;
       for (const [k, v] of this.cooldowns) {
@@ -202,10 +170,6 @@ class AlertMatcher {
       }
     }
   }
-
-  // ════════════════════════════════════════
-  // NOTIFICATIONS
-  // ════════════════════════════════════════
 
   async _notify(userId, signal) {
     if (!this.telegram?.enabled) return;

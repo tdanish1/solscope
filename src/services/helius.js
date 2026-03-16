@@ -1,9 +1,3 @@
-// Helius RPC service
-// Role: Detect on-chain events, wallet activity,
-// transaction parsing. The "ears" of SolScope.
-//
-// Cost: 1 credit per RPC call, 10 per DAS call
-
 class HeliusService {
   constructor(apiKey) {
     this.apiKey = apiKey;
@@ -15,7 +9,6 @@ class HeliusService {
     console.log("  ✓ Helius connected (blockchain layer)");
   }
 
-  // Cache helper
   _cached(key, maxAge = 30000) {
     const e = this.cache.get(key);
     if (e && Date.now() - e.t < maxAge) return e.d;
@@ -29,7 +22,6 @@ class HeliusService {
     }
   }
 
-  // RPC call
   async rpc(method, params = []) {
     this.callCount++;
     const res = await fetch(this.baseUrl, {
@@ -42,7 +34,6 @@ class HeliusService {
     return data.result;
   }
 
-  // Health check
   async healthCheck() {
     try {
       const r = await this.rpc("getHealth");
@@ -52,7 +43,6 @@ class HeliusService {
     }
   }
 
-  // Get wallet token holdings
   async getWalletAssets(address) {
     const ck = `assets:${address}`;
     const cached = this._cached(ck, 60000);
@@ -73,7 +63,6 @@ class HeliusService {
     return result;
   }
 
-  // Get parsed transaction history
   async getTransactionHistory(address, limit = 10) {
     const ck = `txh:${address}:${limit}`;
     const cached = this._cached(ck, 60000);
@@ -87,7 +76,6 @@ class HeliusService {
     return data;
   }
 
-  // Create webhook for real-time events
   async createWebhook(callbackUrl, addresses, types = ["TRANSFER", "SWAP"]) {
     const res = await fetch(`${this.apiUrl}/v0/webhooks?api-key=${this.apiKey}`, {
       method: "POST",

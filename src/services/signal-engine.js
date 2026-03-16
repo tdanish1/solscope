@@ -176,6 +176,14 @@ class SignalEngine {
       }
     }
 
+    // Evict oldest snapshots if over 500
+    if (this.tokenSnapshots.size > 500) {
+      const sorted = [...this.tokenSnapshots.entries()]
+        .sort((a, b) => (a[1].updatedAt || 0) - (b[1].updatedAt || 0));
+      const toRemove = sorted.slice(0, this.tokenSnapshots.size - 500);
+      for (const [key] of toRemove) this.tokenSnapshots.delete(key);
+    }
+
     console.log(`📡 Scan #${this.scanCount}: ${scanned} bulk + ${coreScanned} core tokens, ${signalsGenerated} signals`);
     return { scanned, signalsGenerated };
   }

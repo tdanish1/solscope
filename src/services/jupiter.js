@@ -1,11 +1,3 @@
-// Jupiter price service
-// Role: Token prices, liquidity, market data.
-// The "eyes" of SolScope.
-//
-// Uses current api.jup.ag (not deprecated lite-api)
-// Cost: Free (rate-limited generously)
-
-// Well-known Solana token addresses
 const KNOWN_TOKENS = {
   SOL: "So11111111111111111111111111111111111111112",
   JUP: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
@@ -54,7 +46,6 @@ class JupiterService {
     return h;
   }
 
-  // Get prices for multiple tokens via Jupiter Price V3 (free, no key required)
   async getPrices(mintAddresses) {
     const ck = `prices:${mintAddresses.join(",")}`;
     const cached = this._cached(ck, 30000); // 30s cache
@@ -82,7 +73,6 @@ class JupiterService {
     }
   }
 
-  // Get token list (verified tokens)
   async getVerifiedTokens(limit = 100) {
     const ck = "verified_tokens";
     const cached = this._cached(ck, 300000); // 5 min cache
@@ -103,7 +93,6 @@ class JupiterService {
     }
   }
 
-  // Get single token info
   async getTokenInfo(mintAddress) {
     const ck = `token:${mintAddress}`;
     const cached = this._cached(ck, 120000);
@@ -123,7 +112,6 @@ class JupiterService {
     }
   }
 
-  // Build tracked token universe from known tokens
   async buildTokenUniverse() {
     const mints = Object.values(KNOWN_TOKENS);
     const prices = await this.getPrices(mints);
@@ -142,13 +130,11 @@ class JupiterService {
     return universe;
   }
 
-  // Resolve symbol to mint address
   resolveMint(symbolOrMint) {
     if (symbolOrMint.length > 20) return symbolOrMint; // already a mint
     return KNOWN_TOKENS[symbolOrMint.toUpperCase()] || null;
   }
 
-  // Resolve mint to symbol
   resolveSymbol(mint) {
     for (const [sym, addr] of Object.entries(KNOWN_TOKENS)) {
       if (addr === mint) return sym;

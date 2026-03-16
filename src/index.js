@@ -1,7 +1,3 @@
-
-// SOLSCOPE v2 — Smart Money Intelligence Feed
-
-// Prevent unhandled rejections (e.g. Telegram polling errors) from crashing the process
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled rejection (ignored):", reason?.message || reason);
 });
@@ -9,6 +5,7 @@ process.on("unhandledRejection", (reason) => {
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 
 import HeliusService from "./services/helius.js";
 import JupiterService from "./services/jupiter.js";
@@ -19,11 +16,17 @@ import SolScopeBot from "./telegram-bot.js";
 import createRoutes from "./routes/api.js";
 
 async function main() {
-  // Bind port immediately so Railway's health check passes
   const PORT = process.env.PORT || 3001;
   const app = express();
   app.use(cors());
   app.use(express.json());
+  app.use(rateLimit({
+    windowMs: 60_000,
+    max: 120,               // 120 requests/min per IP (2/sec avg)
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, slow down" },
+  }));
 
   app.get("/", (req, res) => res.json({ name: "SolScope API", status: "starting" }));
 
@@ -31,7 +34,6 @@ async function main() {
     console.log(`  🚀 SolScope on port ${PORT} — initializing services...`);
   });
 
-  // Now initialize services (port is already bound)
   const heliusKey = process.env.HELIUS_API_KEY;
   if (!heliusKey || heliusKey.includes("your_")) {
     console.error("  ❌ HELIUS_API_KEY not set");
@@ -55,7 +57,6 @@ async function main() {
   const alertMatcher = new AlertMatcher(bot);
   botServices.alertMatcher = alertMatcher;
 
-  // Replace placeholder routes with real ones
   const services = { signalEngine, alertMatcher, helius, jupiter, nansen };
   app.use("/api", createRoutes(services));
   app.get("/", (req, res) => res.json({
@@ -69,7 +70,6 @@ async function main() {
   if (bot.enabled) console.log("  🤖 Telegram bot is LIVE");
   if (nansen.enabled) console.log("  🧠 Nansen intelligence is ACTIVE");
 
-  // Fire initial scan
   const scanInterval = (parseInt(process.env.HOT_REFRESH_MINUTES) || 15) * 60 * 1000;
   signalEngine.scan().catch(console.error);
 
