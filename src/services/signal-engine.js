@@ -326,6 +326,12 @@ class SignalEngine {
     signal.timestamp = Date.now();
     signal.emoji = SIGNAL_EMOJI[signal.type];
     signal.label = SIGNAL_LABELS[signal.type];
+
+    // Remove existing signal with same type+mint to prevent duplicates
+    this.signals = this.signals.filter(
+      (s) => !(s.type === signal.type && s.mint === signal.mint)
+    );
+
     this.signals.unshift(signal);
 
     // Keep last 200 signals
