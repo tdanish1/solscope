@@ -13,7 +13,7 @@
 
 // Core Solana tokens that should always have intelligence data
 const CORE_TOKENS = [
-  // SOL excluded — Nansen TGM doesn't support native tokens
+  { symbol: 'SOL', mint: 'So11111111111111111111111111111111111111112' },
   { symbol: 'JUP', mint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN' },
   { symbol: 'BONK', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
   { symbol: 'WIF', mint: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm' },
