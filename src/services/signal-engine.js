@@ -187,11 +187,14 @@ class SignalEngine {
         this.previousScores.set(token.mint, intel.sentimentScore);
         intel.trend = this.nansen.getTrend(intel.sentimentScore, prevScore);
 
+        // Preserve marketCap from bulk scan if flow-intelligence returns 0
+        const existingSnapshot = this.tokenSnapshots.get(token.mint);
         const snapshot = {
           mint: token.mint,
           symbol: token.symbol,
           price,
           ...intel,
+          marketCap: intel.marketCap || existingSnapshot?.marketCap || 0,
           scoreDelta: prevScore !== null ? intel.sentimentScore - prevScore : 0,
           updatedAt: now,
         };
@@ -221,8 +224,9 @@ class SignalEngine {
     const signals = [];
     const { mint, symbol } = snapshot;
 
-    // Quality filter: skip low-quality tokens
-    if ((snapshot.marketCap || 0) < 50000 || (snapshot.smartMoneyCount || 0) < 2) {
+    // Quality filter: skip low-quality tokens (core tokens always pass)
+    const isCore = CORE_TOKENS.some(t => t.mint === mint);
+    if (!isCore && ((snapshot.marketCap || 0) < 100000 || (snapshot.smartMoneyCount || 0) < 3)) {
       return signals;
     }
 
