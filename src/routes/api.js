@@ -149,7 +149,7 @@ function fetchBatchPrices(mints) {
 
 export default function createRoutes(services) {
   const router = Router();
-  const { signalEngine, alertMatcher, helius, jupiter, nansen } = services;
+  const { signalEngine, alertMatcher, helius, jupiter, nansen, push } = services;
 
   router.get("/feed", (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
@@ -184,6 +184,16 @@ export default function createRoutes(services) {
   router.get("/market/:mint", async (req, res) => {
     const data = await fetchTokenMarketData(req.params.mint);
     res.json(data);
+  });
+
+  router.post("/watchlist/sync", (req, res) => {
+    const { pushToken, mints } = req.body;
+    if (!pushToken || !Array.isArray(mints)) {
+      return res.status(400).json({ error: "pushToken and mints[] required" });
+    }
+    const ok = push.syncWatchlist(pushToken, mints);
+    if (!ok) return res.status(400).json({ error: "Invalid push token" });
+    res.json({ synced: mints.length });
   });
 
   router.get("/alerts/:userId", (req, res) => {
@@ -227,6 +237,7 @@ export default function createRoutes(services) {
         nansen: nansen.getStats(),
         signals: signalEngine.getStats(),
         alerts: alertMatcher.getStats(),
+        push: push.getStats(),
       },
     });
   });

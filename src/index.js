@@ -13,6 +13,7 @@ import NansenService from "./services/nansen.js";
 import SignalEngine from "./services/signal-engine.js";
 import AlertMatcher from "./services/alert-matcher.js";
 import SolScopeBot from "./telegram-bot.js";
+import PushService from "./services/push.js";
 import createRoutes from "./routes/api.js";
 
 async function main() {
@@ -56,8 +57,9 @@ async function main() {
   const bot = new SolScopeBot(telegramToken, botServices);
   const alertMatcher = new AlertMatcher(bot);
   botServices.alertMatcher = alertMatcher;
+  const push = new PushService();
 
-  const services = { signalEngine, alertMatcher, helius, jupiter, nansen };
+  const services = { signalEngine, alertMatcher, helius, jupiter, nansen, push };
   app.use("/api", createRoutes(services));
   app.get("/", (req, res) => res.json({
     name: "SolScope API",
@@ -78,7 +80,10 @@ async function main() {
       await signalEngine.scan();
       const feed = signalEngine.getFeed(10);
       for (const signal of feed) {
-        if (Date.now() - signal.timestamp < scanInterval) await alertMatcher.matchSignal(signal);
+        if (Date.now() - signal.timestamp < scanInterval) {
+          await alertMatcher.matchSignal(signal);
+          await push.notifySignal(signal);
+        }
       }
       for (const snapshot of signalEngine.getAllSnapshots()) {
         await alertMatcher.matchSnapshot(snapshot);
