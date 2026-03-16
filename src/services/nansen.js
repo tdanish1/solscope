@@ -107,7 +107,7 @@ class NansenService {
       if (!f) return { flow: 0, wallets: 0 };
       return {
         flow: (f.smart_trader_net_flow_usd || 0) + (f.top_pnl_net_flow_usd || 0) + (f.whale_net_flow_usd || 0),
-        wallets: (f.smart_trader_wallet_count || 0) + (f.top_pnl_wallet_count || 0),
+        wallets: (f.smart_trader_wallet_count || 0) + (f.top_pnl_wallet_count || 0) + (f.whale_wallet_count || 0),
       };
     };
 
