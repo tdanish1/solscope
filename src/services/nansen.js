@@ -82,47 +82,50 @@ class NansenService {
   }
 
   // Per-token smart money intelligence via TGM flow-intelligence
-  // Works for ALL tokens including native SOL
+  // Fetches 1h, 1d, and 7d timeframes. Works for ALL tokens including native SOL.
   async getTokenNetflow(tokenAddress) {
     const ck = `token_netflow:${tokenAddress}`;
     const cached = this._cached(ck, 15 * 60 * 1000);
     if (cached) return cached;
 
-    const data = await this._fetch("/tgm/flow-intelligence", {
+    const fetchFlow = (tf) => this._fetch("/tgm/flow-intelligence", {
       chain: "solana",
       token_address: tokenAddress,
-      timeframe: "1d",
+      timeframe: tf,
     });
 
-    if (!data?.data?.[0]) return null;
+    const [data1h, data1d, data7d] = await Promise.all([
+      fetchFlow("1h"),
+      fetchFlow("1d"),
+      fetchFlow("7d"),
+    ]);
 
-    const f = data.data[0];
-    const smartTraderFlow = f.smart_trader_net_flow_usd || 0;
-    const whaleFlow = f.whale_net_flow_usd || 0;
-    const topPnlFlow = f.top_pnl_net_flow_usd || 0;
-    const smartWallets = (f.smart_trader_wallet_count || 0) + (f.top_pnl_wallet_count || 0);
-    // Combined smart money flow: smart traders + top PnL + whales
-    const netflow24h = smartTraderFlow + topPnlFlow + whaleFlow;
+    const f1d = data1d?.data?.[0];
+    if (!f1d) return null;
+
+    const sumSmartFlow = (f) => {
+      if (!f) return { flow: 0, wallets: 0 };
+      return {
+        flow: (f.smart_trader_net_flow_usd || 0) + (f.top_pnl_net_flow_usd || 0) + (f.whale_net_flow_usd || 0),
+        wallets: (f.smart_trader_wallet_count || 0) + (f.top_pnl_wallet_count || 0),
+      };
+    };
+
+    const flow1h = sumSmartFlow(data1h?.data?.[0]);
+    const flow1d = sumSmartFlow(f1d);
+    const flow7d = sumSmartFlow(data7d?.data?.[0]);
 
     const entry = {
       token_address: tokenAddress,
-      token_symbol: null, // filled by signal engine
-      net_flow_1h_usd: 0,
-      net_flow_24h_usd: netflow24h,
-      net_flow_7d_usd: 0, // flow-intelligence only gives the selected timeframe
+      token_symbol: null,
+      net_flow_1h_usd: flow1h.flow,
+      net_flow_24h_usd: flow1d.flow,
+      net_flow_7d_usd: flow7d.flow,
       net_flow_30d_usd: 0,
       chain: "solana",
-      trader_count: smartWallets,
+      trader_count: flow1d.wallets,
       market_cap_usd: 0,
       token_sectors: [],
-      // Extra segment data for richer display
-      _segments: {
-        whaleFlow: whaleFlow,
-        whaleCount: f.whale_wallet_count || 0,
-        smartTraderFlow: smartTraderFlow,
-        smartTraderCount: f.smart_trader_wallet_count || 0,
-        exchangeFlow: f.exchange_net_flow_usd || 0,
-      },
     };
 
     this._cache(ck, entry);
