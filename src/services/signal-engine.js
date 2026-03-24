@@ -338,7 +338,20 @@ class SignalEngine {
       });
     }
 
-    return signals;
+    // Only emit the highest-priority signal per token per scan
+    if (signals.length <= 1) return signals;
+    const PRIORITY = {
+      NEW_TOKEN_DISCOVERY: 1,
+      WHALE_ALERT: 2,
+      SMART_MONEY_ENTRY: 3,
+      SMART_MONEY_EXIT: 4,
+      SENTIMENT_SPIKE: 5,
+      CONVICTION_UP: 6,
+      CONVICTION_DOWN: 7,
+      LIQUIDITY_RISK: 8,
+    };
+    signals.sort((a, b) => (PRIORITY[a.type] || 99) - (PRIORITY[b.type] || 99));
+    return [signals[0]];
   }
 
   _addSignal(signal) {
