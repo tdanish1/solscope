@@ -314,8 +314,8 @@ class SignalEngine {
         type: SIGNAL_TYPES.WHALE_ALERT,
         mint, symbol,
         headline: inflow
-          ? `Whale buying ${symbol} — ${fmt(snapshot.netflowUsd)} inflow detected`
-          : `Whale dumping ${symbol} — ${fmt(snapshot.netflowUsd)} outflow detected`,
+          ? `Whale accumulating ${symbol} — massive inflow detected`
+          : `Whale dumping ${symbol} — massive outflow detected`,
         details: {
           netflowUsd: snapshot.netflowUsd,
           confidence: snapshot.confidence,
