@@ -66,15 +66,20 @@ function fetchTokenMarketData(mint) {
           const res = await fetchWithTimeout(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
           if (!res.ok) return null;
           const d = await res.json();
-          const pair = (d.pairs || []).find(p => p.chainId === 'solana' && p.baseToken?.address === mint);
-          if (!pair) return null;
+          const solanaPairs = (d.pairs || []).filter(p => p.chainId === 'solana' && p.baseToken?.address === mint);
+          if (!solanaPairs.length) return null;
+          // Pick highest-liquidity pair for price/mcap, sum liquidity + volume across all pairs
+          solanaPairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
+          const best = solanaPairs[0];
+          const totalLiquidity = solanaPairs.reduce((sum, p) => sum + (p.liquidity?.usd || 0), 0);
+          const totalVolume = solanaPairs.reduce((sum, p) => sum + (p.volume?.h24 || 0), 0);
           return {
-            price: parseFloat(pair.priceUsd) || 0,
-            priceChange24h: pair.priceChange?.h24 || 0,
-            volume24h: pair.volume?.h24 || 0,
-            liquidity: pair.liquidity?.usd || 0,
-            marketCap: pair.marketCap || pair.fdv || 0,
-            imageUrl: pair.info?.imageUrl || null,
+            price: parseFloat(best.priceUsd) || 0,
+            priceChange24h: best.priceChange?.h24 || 0,
+            volume24h: totalVolume,
+            liquidity: totalLiquidity,
+            marketCap: best.marketCap || best.fdv || 0,
+            imageUrl: best.info?.imageUrl || null,
           };
         } catch { return null; }
       })(),
