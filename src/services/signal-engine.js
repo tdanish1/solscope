@@ -11,6 +11,15 @@ const CORE_TOKENS = [
   { symbol: 'RENDER', mint: 'rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof' },
 ];
 
+function fmt(n) {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(1)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
+}
+
 const SIGNAL_TYPES = {
   CONVICTION_UP: "CONVICTION_UP",
   CONVICTION_DOWN: "CONVICTION_DOWN",
@@ -18,6 +27,8 @@ const SIGNAL_TYPES = {
   SMART_MONEY_EXIT: "SMART_MONEY_EXIT",
   LIQUIDITY_RISK: "LIQUIDITY_RISK",
   SENTIMENT_SPIKE: "SENTIMENT_SPIKE",
+  WHALE_ALERT: "WHALE_ALERT",
+  NEW_TOKEN_DISCOVERY: "NEW_TOKEN_DISCOVERY",
 };
 
 const SIGNAL_LABELS = {
@@ -27,6 +38,8 @@ const SIGNAL_LABELS = {
   SMART_MONEY_EXIT: "Smart Money Exit",
   LIQUIDITY_RISK: "Liquidity Risk",
   SENTIMENT_SPIKE: "Sentiment Spike",
+  WHALE_ALERT: "Whale Alert",
+  NEW_TOKEN_DISCOVERY: "New Discovery",
 };
 
 const SIGNAL_EMOJI = {
@@ -36,6 +49,8 @@ const SIGNAL_EMOJI = {
   SMART_MONEY_EXIT: "🚪",
   LIQUIDITY_RISK: "🔻",
   SENTIMENT_SPIKE: "⚡",
+  WHALE_ALERT: "🚨",
+  NEW_TOKEN_DISCOVERY: "🆕",
 };
 
 class SignalEngine {
@@ -46,8 +61,11 @@ class SignalEngine {
 
     this.convictionThreshold = config.convictionThreshold || 1000;
     this.holdingsChangeThreshold = config.holdingsChangeThreshold || 5;
+    this.whaleThreshold = config.whaleThreshold || 50000;
     this.tokenSnapshots = new Map();
     this.previousScores = new Map();
+    this.knownTokenMints = new Set();   // tokens seen in previous scans (for discovery)
+    this.firstScanDone = false;         // skip discovery signals on first scan
     this.signals = [];
     this.dailyBrief = null;
     this.scanCount = 0;
@@ -176,6 +194,15 @@ class SignalEngine {
       }
     }
 
+    // Track known tokens for discovery signals
+    for (const entry of entries) {
+      this.knownTokenMints.add(entry.token_address);
+    }
+    for (const token of CORE_TOKENS) {
+      this.knownTokenMints.add(token.mint);
+    }
+    this.firstScanDone = true;
+
     // Evict oldest snapshots if over 500
     if (this.tokenSnapshots.size > 500) {
       const sorted = [...this.tokenSnapshots.entries()]
@@ -278,6 +305,37 @@ class SignalEngine {
           },
         });
       }
+    }
+
+    // Whale Alert: single scan shows massive flow (>$50K)
+    if (Math.abs(snapshot.netflowUsd || 0) >= this.whaleThreshold) {
+      const inflow = snapshot.netflowUsd > 0;
+      signals.push({
+        type: SIGNAL_TYPES.WHALE_ALERT,
+        mint, symbol,
+        headline: inflow
+          ? `Whale buying ${symbol} — ${fmt(snapshot.netflowUsd)} inflow detected`
+          : `Whale dumping ${symbol} — ${fmt(snapshot.netflowUsd)} outflow detected`,
+        details: {
+          netflowUsd: snapshot.netflowUsd,
+          confidence: snapshot.confidence,
+          direction: inflow ? 'BUY' : 'SELL',
+        },
+      });
+    }
+
+    // New Token Discovery: token appears in smart money flows for the first time
+    if (this.firstScanDone && !this.knownTokenMints.has(mint) && (snapshot.smartMoneyCount || 0) >= 2 && (snapshot.netflowUsd || 0) > 0) {
+      signals.push({
+        type: SIGNAL_TYPES.NEW_TOKEN_DISCOVERY,
+        mint, symbol,
+        headline: `Smart money just discovered ${symbol}`,
+        details: {
+          netflowUsd: snapshot.netflowUsd,
+          smartMoneyCount: snapshot.smartMoneyCount,
+          confidence: snapshot.confidence,
+        },
+      });
     }
 
     return signals;
